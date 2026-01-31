@@ -1,0 +1,276 @@
+# Configuration for Qwen3 1.7B Model Training
+# Optimized for low-memory CPU/VPS training (8GB RAM + swap)
+# The ultimate tune-up for a small but capable model
+
+model:
+  name: "Qwen/Qwen2.5-1.5B"  # Qwen2.5 1.5B (closest to 1.7B available)
+  # Alternative: "Qwen/Qwen2.5-1.5B-Instruct" for instruct base
+  trust_remote_code: true  # Required for Qwen models
+  torch_dtype: "float32"  # Use FP32 for CPU stability
+
+# Training Infrastructure - CPU Optimized
+training:
+  device: "cpu"  # CPU training for VPS
+  use_amp: false  # No AMP on CPU
+  
+  # Distributed - single process
+  distributed: false
+  world_size: 1
+  
+  # Memory optimization - CRITICAL for 8GB
+  gradient_checkpointing: true  # Trades compute for memory
+  gradient_accumulation_steps: 16  # Larger effective batch with tiny micro-batch
+  
+  # Optimization
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Learning rate schedule
+  lr_scheduler: "cosine"
+  warmup_ratio: 0.1
+  warmup_steps: null
+
+# LoRA Configuration - ESSENTIAL for memory efficiency
+lora:
+  use_lora: true
+  r: 8  # Small rank for 1.7B (still effective)
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  
+  # QLoRA - 4-bit for even smaller memory
+  use_qlora: true
+  quantization: "nf4"
+  double_quant: true
+  quant_type: "nf4"
+  compute_dtype: "float32"  # FP32 for CPU
+
+# SFT Configuration - Conservative for CPU
+sft:
+  learning_rate: 2.0e-5  # Slightly higher for small model
+  batch_size: 1  # Per device - minimal for memory
+  num_epochs: 3
+  max_seq_length: 512  # Shorter context saves memory
+  packing: false
+  
+  # Data
+  train_file: "data/sft_train.json"
+  eval_file: "data/sft_eval.json"
+  
+  # Logging - less frequent for CPU
+  logging_steps: 5
+  eval_steps: 50
+  save_steps: 100
+  
+  # Output
+  output_dir: "checkpoints/sft_qwen3_1.7b"
+  save_total_limit: 2
+
+# Reward Model Configuration
+reward_model:
+  learning_rate: 1.0e-5
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  dropout: 0.1
+  hidden_size: 1536  # Qwen 1.5B hidden size
+  
+  label_smoothing: 0.05
+  l2_reg: 1.0e-4
+  margin: 0.0
+  
+  ensemble_size: 1  # Single model for memory
+  
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  output_dir: "checkpoints/reward_model_qwen3_1.7b"
+
+# DPO Configuration - Recommended for CPU (no online generation)
+dpo:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 0.1
+  label_smoothing: 0.0
+  loss_type: "sigmoid"
+  
+  reference_model_path: "checkpoints/sft_qwen3_1.7b"
+  reference_free: false
+  
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  output_dir: "checkpoints/dpo_qwen3_1.7b"
+
+# GRPO Configuration (Alternative to DPO)
+grpo:
+  learning_rate: 5.0e-7
+  batch_size: 2
+  num_epochs: 2
+  max_seq_length: 512
+  
+  group_size: 4  # Small group for memory
+  kl_coeff: 0.1
+  clip_ratio: 0.2
+  num_policy_updates: 1
+  max_completion_length: 128  # Short completions for speed
+  temperature: 1.0
+  
+  use_verifiable_rewards: true
+  reward_fn_path: null
+  
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  output_dir: "checkpoints/grpo_qwen3_1.7b"
+
+# SimPO Configuration - BEST for CPU (no reference model needed!)
+simpo:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 2.0
+  gamma: 0.5
+  label_smoothing: 0.0
+  
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  output_dir: "checkpoints/simpo_qwen3_1.7b"
+
+# KTO Configuration
+kto:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 0.1
+  lambda_d: 1.0
+  lambda_u: 0.5
+  kl_ema_decay: 0.99
+  
+  train_file: "data/unpaired_train.json"
+  eval_file: "data/unpaired_eval.json"
+  
+  output_dir: "checkpoints/kto_qwen3_1.7b"
+
+# PPO Configuration (Not recommended for CPU - very slow)
+ppo:
+  learning_rate: 5.0e-7
+  batch_size: 8
+  num_epochs: 2
+  max_seq_length: 512
+  
+  clip_ratio: 0.2
+  kl_coeff: 0.02
+  kl_target: null
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  
+  lam: 0.95
+  gamma: 0.99
+  normalize_advantage: true
+  whiten_rewards: false
+  
+  ppo_epochs: 2
+  mini_batch_size: 4
+  rollout_multiplier: 2
+  
+  temperature: 1.0
+  max_completion_length: 128
+  
+  reward_model_path: "checkpoints/reward_model_qwen3_1.7b"
+  value_model_path: null
+  
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  output_dir: "checkpoints/ppo_qwen3_1.7b"
+
+# Logging Configuration
+logging:
+  use_wandb: false  # Disable for VPS (optional)
+  wandb_project: "rlhf-qwen3-1.7b"
+  wandb_run_name: null
+  wandb_tags: ["1.7b", "rlhf", "cpu", "qwen3"]
+  
+  use_tensorboard: true
+  tensorboard_dir: "logs/tensorboard_qwen3_1.7b"
+  
+  log_level: "INFO"
+  log_file: "logs/training_qwen3_1.7b.log"
+
+# Checkpointing
+checkpoint:
+  save_total_limit: 2
+  resume_from_checkpoint: null
+  save_safetensors: true
+
+# Evaluation
+evaluation:
+  eval_strategy: "steps"
+  eval_steps: 50
+  eval_accumulation_steps: 1
+  
+  compute_kl: true
+  compute_rewards: true
+  compute_diversity: false  # Skip diversity for speed
+  
+  eval_max_new_tokens: 128
+  eval_temperature: 1.0
+  eval_num_return_sequences: 1
+
+# Context Compression - Disabled for small model
+context_compression:
+  enabled: false
+  method: "attention"
+  compression_ratio: 16
+  chunk_size: 256
+
+# Self-Play - Disabled for CPU training
+self_play:
+  enabled: false
+  n_games: 100
+  refinement_iterations: 2
+  adversarial_validation: false
+  capability_test_frequency: 10
+
+# Validation
+validation:
+  run_capability_tests: true
+  rollback_on_regression: true
+  regression_threshold: 0.15
+
+# Hardware-Specific for VPS
+hardware:
+  # Memory management
+  max_memory: "6GiB"  # Leave 2GB for system
+  offload_optimizer: true
+  offload_params: true
+  
+  # CPU optimizations
+  num_workers: 2  # DataLoader workers
+  pin_memory: false  # No GPU
+  
+  # Threading
+  torch_num_threads: 3  # Match vCPUs

@@ -1,0 +1,283 @@
+# Configuration for 7B Model Training
+# Optimized for single/multi-GPU setups
+
+model:
+  name: "meta-llama/Llama-2-7b-hf"  # or your base model
+  trust_remote_code: false
+  torch_dtype: "bfloat16"
+
+# Training Infrastructure
+training:
+  # Device configuration
+  device: "auto"  # auto, cuda, cpu
+  use_amp: true
+  amp_dtype: "bfloat16"
+  
+  # Distributed training
+  distributed: false
+  world_size: 1
+  
+  # Memory optimization
+  gradient_checkpointing: true
+  gradient_accumulation_steps: 4
+  
+  # Optimization
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Learning rate schedule
+  lr_scheduler: "cosine"
+  warmup_ratio: 0.1
+  warmup_steps: null  # Computed from warmup_ratio if null
+
+# LoRA Configuration (for efficient fine-tuning)
+lora:
+  use_lora: true
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+
+# SFT Configuration
+sft:
+  learning_rate: 5.0e-6
+  batch_size: 8  # Per device
+  num_epochs: 3
+  max_seq_length: 2048
+  packing: false
+  
+  # Data
+  train_file: "data/sft_train.json"
+  eval_file: "data/sft_eval.json"
+  
+  # Logging
+  logging_steps: 10
+  eval_steps: 100
+  save_steps: 500
+  
+  # Output
+  output_dir: "checkpoints/sft_7b"
+  save_total_limit: 3
+
+# Reward Model Configuration
+reward_model:
+  learning_rate: 1.0e-5
+  batch_size: 8
+  num_epochs: 2
+  max_seq_length: 2048
+  
+  # Architecture
+  dropout: 0.1
+  hidden_size: 4096  # Same as base model
+  
+  # Training
+  label_smoothing: 0.05
+  l2_reg: 1.0e-4
+  margin: 0.0
+  
+  # Ensemble
+  ensemble_size: 1
+  
+  # Data
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/reward_model_7b"
+
+# DPO Configuration
+dpo:
+  learning_rate: 5.0e-7
+  batch_size: 4
+  num_epochs: 1
+  max_seq_length: 2048
+  
+  # DPO specific
+  beta: 0.1
+  label_smoothing: 0.0
+  loss_type: "sigmoid"  # sigmoid, hinge, ipo
+  
+  # Reference model
+  reference_model_path: "checkpoints/sft_7b"
+  reference_free: false
+  
+  # Data
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/dpo_7b"
+
+# GRPO Configuration
+grpo:
+  learning_rate: 1.0e-6
+  batch_size: 4  # Number of prompts
+  num_epochs: 2
+  max_seq_length: 2048
+  
+  # GRPO specific
+  group_size: 8
+  kl_coeff: 0.1
+  clip_ratio: 0.2
+  num_policy_updates: 1
+  max_completion_length: 512
+  temperature: 1.0
+  
+  # Rewards
+  use_verifiable_rewards: true
+  reward_fn_path: null  # Path to custom reward function
+  
+  # Data
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/grpo_7b"
+
+# SimPO Configuration
+simpo:
+  learning_rate: 5.0e-7
+  batch_size: 4
+  num_epochs: 1
+  max_seq_length: 2048
+  
+  # SimPO specific
+  beta: 2.0
+  gamma: 0.5
+  label_smoothing: 0.0
+  
+  # Data
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/simpo_7b"
+
+# KTO Configuration
+kto:
+  learning_rate: 5.0e-7
+  batch_size: 4
+  num_epochs: 1
+  max_seq_length: 2048
+  
+  # KTO specific
+  beta: 0.1
+  lambda_d: 1.0
+  lambda_u: 0.5
+  kl_ema_decay: 0.99
+  
+  # Data
+  train_file: "data/unpaired_train.json"
+  eval_file: "data/unpaired_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/kto_7b"
+
+# PPO Configuration
+ppo:
+  learning_rate: 1.0e-6
+  batch_size: 64  # Total rollouts
+  num_epochs: 4
+  max_seq_length: 2048
+  
+  # PPO specific
+  clip_ratio: 0.2
+  kl_coeff: 0.02
+  kl_target: null  # Adaptive KL if set
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  
+  # GAE
+  lam: 0.95
+  gamma: 0.99
+  normalize_advantage: true
+  whiten_rewards: false
+  
+  # Updates
+  ppo_epochs: 4
+  mini_batch_size: 16
+  rollout_multiplier: 4
+  
+  # Generation
+  temperature: 1.0
+  max_completion_length: 512
+  
+  # Models
+  reward_model_path: "checkpoints/reward_model_7b"
+  value_model_path: null  # Will be created from policy if null
+  
+  # Data
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  # Output
+  output_dir: "checkpoints/ppo_7b"
+
+# Logging Configuration
+logging:
+  use_wandb: true
+  wandb_project: "rlhf-7b"
+  wandb_run_name: null  # Auto-generated if null
+  wandb_tags: ["7b", "rlhf"]
+  
+  use_tensorboard: true
+  tensorboard_dir: "logs/tensorboard"
+  
+  log_level: "INFO"
+  log_file: "logs/training.log"
+
+# Checkpointing
+checkpoint:
+  save_total_limit: 3
+  resume_from_checkpoint: null
+  save_safetensors: true
+
+# Evaluation
+evaluation:
+  eval_strategy: "steps"
+  eval_steps: 100
+  eval_accumulation_steps: 1
+  
+  # Metrics
+  compute_kl: true
+  compute_rewards: true
+  compute_diversity: true
+  
+  # Generation for eval
+  eval_max_new_tokens: 256
+  eval_temperature: 1.0
+  eval_num_return_sequences: 1
+
+# Context Compression (optional)
+context_compression:
+  enabled: false
+  method: "attention"  # attention, pooling, learned
+  compression_ratio: 16
+  chunk_size: 512
+
+# Self-Play Configuration (optional)
+self_play:
+  enabled: false
+  n_games: 1000
+  refinement_iterations: 3
+  adversarial_validation: true
+  capability_test_frequency: 10
+
+# Safety & Validation
+validation:
+  run_capability_tests: true
+  rollback_on_regression: true
+  regression_threshold: 0.1

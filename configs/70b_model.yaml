@@ -1,0 +1,266 @@
+# Configuration for 70B Model Training
+# Optimized for multi-GPU / multi-node setups
+
+model:
+  name: "meta-llama/Llama-2-70b-hf"  # or your base model
+  trust_remote_code: false
+  torch_dtype: "bfloat16"
+
+# Training Infrastructure
+training:
+  # Device configuration
+  device: "auto"
+  use_amp: true
+  amp_dtype: "bfloat16"
+  
+  # Distributed training - REQUIRED for 70B
+  distributed: true
+  world_size: 8  # Number of GPUs (adjust as needed)
+  
+  # DeepSpeed / FSDP configuration
+  use_deepspeed: true
+  deepspeed_config: "configs/deepspeed_config.json"
+  
+  # Memory optimization - CRITICAL for 70B
+  gradient_checkpointing: true
+  gradient_accumulation_steps: 8  # Higher for larger effective batch
+  
+  # Optimization
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Learning rate schedule
+  lr_scheduler: "cosine"
+  warmup_ratio: 0.03  # Lower for large models
+  warmup_steps: null
+
+# LoRA Configuration (ESSENTIAL for 70B - full fine-tuning impractical)
+lora:
+  use_lora: true
+  r: 64  # Higher rank for larger models
+  alpha: 128
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  
+  # QLoRA settings
+  use_qlora: true
+  quantization: "nf4"  # 4-bit Normal Float
+  double_quant: true
+  quant_type: "nf4"
+  compute_dtype: "bfloat16"
+
+# SFT Configuration
+sft:
+  learning_rate: 1.0e-6  # Lower LR for larger models
+  batch_size: 1  # Per device - small due to model size
+  num_epochs: 1
+  max_seq_length: 4096  # Can use longer context with proper optimization
+  packing: true  # Pack sequences for efficiency
+  
+  # Data
+  train_file: "data/sft_train.jsonl"  # Use JSONL for streaming
+  eval_file: "data/sft_eval.jsonl"
+  streaming: true  # Essential for large datasets
+  
+  # Logging (less frequent for long training)
+  logging_steps: 1
+  eval_steps: 50
+  save_steps: 200
+  
+  # Output
+  output_dir: "checkpoints/sft_70b"
+  save_total_limit: 2  # Keep fewer due to size
+
+# Reward Model Configuration
+reward_model:
+  learning_rate: 5.0e-6
+  batch_size: 1
+  num_epochs: 1
+  max_seq_length: 4096
+  
+  dropout: 0.1
+  hidden_size: 8192  # 70B model hidden size
+  
+  label_smoothing: 0.05
+  l2_reg: 1.0e-4
+  margin: 0.0
+  
+  ensemble_size: 1  # Increase if you can afford memory
+  
+  train_file: "data/preference_train.jsonl"
+  eval_file: "data/preference_eval.jsonl"
+  streaming: true
+  
+  output_dir: "checkpoints/reward_model_70b"
+
+# DPO Configuration
+dpo:
+  learning_rate: 5.0e-7
+  batch_size: 1
+  num_epochs: 1
+  max_seq_length: 4096
+  
+  beta: 0.1
+  label_smoothing: 0.0
+  loss_type: "sigmoid"
+  
+  reference_model_path: "checkpoints/sft_70b"
+  reference_free: false
+  
+  train_file: "data/preference_train.jsonl"
+  eval_file: "data/preference_eval.jsonl"
+  streaming: true
+  
+  output_dir: "checkpoints/dpo_70b"
+
+# GRPO Configuration (Recommended for 70B reasoning training)
+grpo:
+  learning_rate: 5.0e-7
+  batch_size: 4  # Number of prompts per global batch
+  num_epochs: 2
+  max_seq_length: 4096
+  
+  group_size: 16  # Larger groups for better baselines
+  kl_coeff: 0.05  # Lower KL for stability
+  clip_ratio: 0.2
+  num_policy_updates: 1
+  max_completion_length: 1024  # Longer for reasoning
+  temperature: 1.0
+  
+  use_verifiable_rewards: true
+  reward_fn_path: null
+  
+  train_file: "data/prompts_train.jsonl"
+  eval_file: "data/prompts_eval.jsonl"
+  streaming: true
+  
+  output_dir: "checkpoints/grpo_70b"
+
+# PPO Configuration (Memory intensive - use with caution)
+ppo:
+  learning_rate: 5.0e-7
+  batch_size: 128  # Total rollouts across all GPUs
+  num_epochs: 2
+  max_seq_length: 4096
+  
+  clip_ratio: 0.2
+  kl_coeff: 0.01  # Lower for large models
+  kl_target: 0.01  # Adaptive KL
+  value_loss_coef: 0.5
+  entropy_coef: 0.005  # Lower entropy for stability
+  
+  lam: 0.95
+  gamma: 0.99
+  normalize_advantage: true
+  whiten_rewards: true
+  
+  ppo_epochs: 2
+  mini_batch_size: 8
+  rollout_multiplier: 4
+  
+  temperature: 1.0
+  max_completion_length: 1024
+  
+  reward_model_path: "checkpoints/reward_model_70b"
+  value_model_path: null
+  
+  train_file: "data/prompts_train.jsonl"
+  eval_file: "data/prompts_eval.jsonl"
+  streaming: true
+  
+  output_dir: "checkpoints/ppo_70b"
+
+# Logging Configuration
+logging:
+  use_wandb: true
+  wandb_project: "rlhf-70b"
+  wandb_run_name: null
+  wandb_tags: ["70b", "rlhf", "distributed"]
+  
+  use_tensorboard: true
+  tensorboard_dir: "logs/tensorboard_70b"
+  
+  log_level: "INFO"
+  log_file: "logs/training_70b.log"
+
+# Checkpointing (Critical for long-running jobs)
+checkpoint:
+  save_total_limit: 2  # Limited due to size (400GB+ per checkpoint!)
+  resume_from_checkpoint: null
+  save_safetensors: true
+  
+  # Async checkpointing to reduce overhead
+  async_save: true
+  
+  # Backup to cloud storage
+  backup_to_cloud: true
+  cloud_bucket: "gs://your-bucket/checkpoints"
+
+# Evaluation
+evaluation:
+  eval_strategy: "steps"
+  eval_steps: 50
+  eval_accumulation_steps: 4
+  
+  compute_kl: true
+  compute_rewards: true
+  compute_diversity: true
+  
+  eval_max_new_tokens: 512
+  eval_temperature: 1.0
+  eval_num_return_sequences: 1
+
+# Context Compression (Recommended for 70B)
+context_compression:
+  enabled: true
+  method: "attention"
+  compression_ratio: 8  # Lower ratio for quality
+  chunk_size: 2048
+
+# Hardware-Specific Settings
+hardware:
+  # GPU memory management
+  max_memory_per_gpu: "40GiB"  # Leave room for overhead
+  offload_optimizer: true  # Offload optimizer states to CPU
+  offload_params: false  # Keep params on GPU
+  
+  # Communication
+  ddp_find_unused_parameters: false
+  ddp_bucket_cap_mb: 50
+  
+  # Mixed precision
+  fp16: false
+  bf16: true
+  
+  # Gradient accumulation optimization
+  delay_grad_reduce: true
+  delay_param_update: true
+
+# Advanced Optimizations
+optimization:
+  # Flash Attention (if available)
+  use_flash_attention: true
+  
+  # Gradient checkpointing optimizations
+  checkpoint_activations: true
+  checkpoint_num_layers: 1
+  
+  # Memory-efficient attention
+  use_memory_efficient_attention: true
+  
+  # Fuse operations
+  fuse_attention: true
+  fuse_mlp: true

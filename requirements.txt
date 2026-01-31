@@ -1,0 +1,58 @@
+# Core ML / RLHF Dependencies
+torch
+transformers
+accelerate
+datasets
+nltk
+tqdm
+numpy
+scipy
+scikit-learn
+
+# Configuration & Data Handling
+pydantic
+dataclasses-json
+pyyaml
+omegaconf
+python-dotenv
+
+# Optional but Recommended
+peft
+bitsandbytes
+sentencepiece
+protobuf
+tokenizers
+
+# Logging & Monitoring
+wandb
+tensorboard
+rich
+tensorboardX
+
+# Distributed Training
+deepspeed
+
+# Reasoning & Math Rewards
+sympy
+math-verify
+
+# Data Processing
+pandas
+pyarrow
+huggingface-hub
+
+# Evaluation
+rouge-score
+sacrebleu
+bert-score
+
+# API & Serving (optional)
+fastapi
+uvicorn
+
+# Development
+pytest
+black
+isort
+mypy
+pre-commit
