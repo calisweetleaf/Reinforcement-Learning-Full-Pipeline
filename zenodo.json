@@ -1,0 +1,208 @@
+{
+  "access": {
+    "embargo": {
+      "active": false,
+      "reason": null
+    },
+    "files": "public",
+    "record": "public",
+    "status": "open"
+  },
+  "created": "2026-02-01T07:45:21.584761+00:00",
+  "custom_fields": {
+    "code:codeRepository": "https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline"
+  },
+  "deletion_status": {
+    "is_deleted": false,
+    "status": "P"
+  },
+  "files": {
+    "count": 1,
+    "enabled": true,
+    "entries": {
+      "calisweetleaf/Reinforcement-Learning-Full-Pipeline-v1.0.0.zip": {
+        "access": {
+          "hidden": false
+        },
+        "checksum": "md5:9ddd14ec7f85e62ca516ad0168ad951d",
+        "ext": "zip",
+        "id": "2381f3ca-8589-44aa-94e4-69f2ee4c24b4",
+        "key": "calisweetleaf/Reinforcement-Learning-Full-Pipeline-v1.0.0.zip",
+        "links": {
+          "content": "https://zenodo.org/api/records/18447565/files/calisweetleaf/Reinforcement-Learning-Full-Pipeline-v1.0.0.zip/content",
+          "self": "https://zenodo.org/api/records/18447565/files/calisweetleaf/Reinforcement-Learning-Full-Pipeline-v1.0.0.zip"
+        },
+        "metadata": null,
+        "mimetype": "application/zip",
+        "size": 207635,
+        "storage_class": "L"
+      }
+    },
+    "order": [],
+    "total_bytes": 207635
+  },
+  "id": "18447565",
+  "is_draft": false,
+  "is_published": true,
+  "links": {
+    "access": "https://zenodo.org/api/records/18447565/access",
+    "access_grants": "https://zenodo.org/api/records/18447565/access/grants",
+    "access_links": "https://zenodo.org/api/records/18447565/access/links",
+    "access_request": "https://zenodo.org/api/records/18447565/access/request",
+    "access_users": "https://zenodo.org/api/records/18447565/access/users",
+    "archive": "https://zenodo.org/api/records/18447565/files-archive",
+    "archive_media": "https://zenodo.org/api/records/18447565/media-files-archive",
+    "communities": "https://zenodo.org/api/records/18447565/communities",
+    "communities-suggestions": "https://zenodo.org/api/records/18447565/communities-suggestions",
+    "doi": "https://doi.org/10.5281/zenodo.18447565",
+    "draft": "https://zenodo.org/api/records/18447565/draft",
+    "file_modification": "https://zenodo.org/api/records/18447565/file-modification",
+    "files": "https://zenodo.org/api/records/18447565/files",
+    "latest": "https://zenodo.org/api/records/18447565/versions/latest",
+    "latest_html": "https://zenodo.org/records/18447565/latest",
+    "media_files": "https://zenodo.org/api/records/18447565/media-files",
+    "parent": "https://zenodo.org/api/records/18447564",
+    "parent_doi": "https://doi.org/10.5281/zenodo.18447564",
+    "parent_doi_html": "https://zenodo.org/doi/10.5281/zenodo.18447564",
+    "parent_html": "https://zenodo.org/records/18447564",
+    "preview_html": "https://zenodo.org/records/18447565?preview=1",
+    "request_deletion": "https://zenodo.org/api/records/18447565/request-deletion",
+    "requests": "https://zenodo.org/api/records/18447565/requests",
+    "reserve_doi": "https://zenodo.org/api/records/18447565/draft/pids/doi",
+    "self": "https://zenodo.org/api/records/18447565",
+    "self_doi": "https://doi.org/10.5281/zenodo.18447565",
+    "self_doi_html": "https://zenodo.org/doi/10.5281/zenodo.18447565",
+    "self_html": "https://zenodo.org/records/18447565",
+    "self_iiif_manifest": "https://zenodo.org/api/iiif/record:18447565/manifest",
+    "self_iiif_sequence": "https://zenodo.org/api/iiif/record:18447565/sequence/default",
+    "versions": "https://zenodo.org/api/records/18447565/versions"
+  },
+  "media_files": {
+    "count": 0,
+    "enabled": false,
+    "entries": {},
+    "order": [],
+    "total_bytes": 0
+  },
+  "metadata": {
+    "creators": [
+      {
+        "person_or_org": {
+          "family_name": "Christian Trey Rowell",
+          "name": "Christian Trey Rowell",
+          "type": "personal"
+        }
+      }
+    ],
+    "description": "<p>This represents the first of many SOTA tools to come in a project dedicated to bringing SOTA industrial standard tooling that has been blocked from the open source community.</p>",
+    "publication_date": "2026-02-01",
+    "publisher": "Zenodo",
+    "related_identifiers": [
+      {
+        "identifier": "https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline/tree/v1.0.0",
+        "relation_type": {
+          "id": "issupplementto",
+          "title": {
+            "de": "Erg\u00e4nzt",
+            "en": "Is supplement to"
+          }
+        },
+        "resource_type": {
+          "id": "software",
+          "title": {
+            "de": "Software",
+            "en": "Software"
+          }
+        },
+        "scheme": "url"
+      }
+    ],
+    "resource_type": {
+      "id": "software",
+      "title": {
+        "de": "Software",
+        "en": "Software"
+      }
+    },
+    "rights": [
+      {
+        "description": {
+          "en": "The Creative Commons Attribution license allows re-distribution and re-use of a licensed work on the condition that the creator is appropriately credited."
+        },
+        "icon": "cc-by-icon",
+        "id": "cc-by-4.0",
+        "props": {
+          "scheme": "spdx",
+          "url": "https://creativecommons.org/licenses/by/4.0/legalcode"
+        },
+        "title": {
+          "en": "Creative Commons Attribution 4.0 International"
+        }
+      }
+    ],
+    "title": "calisweetleaf/Reinforcement-Learning-Full-Pipeline: v1.0.0",
+    "version": "v1.0.0"
+  },
+  "parent": {
+    "access": {
+      "grants": [],
+      "links": [],
+      "owned_by": {
+        "user": "1457830"
+      },
+      "settings": {
+        "accept_conditions_text": null,
+        "allow_guest_requests": false,
+        "allow_user_requests": false,
+        "secret_link_expiration": 0
+      }
+    },
+    "communities": {},
+    "id": "18447564",
+    "pids": {
+      "doi": {
+        "client": "datacite",
+        "identifier": "10.5281/zenodo.18447564",
+        "provider": "datacite"
+      }
+    }
+  },
+  "pids": {
+    "doi": {
+      "client": "datacite",
+      "identifier": "10.5281/zenodo.18447565",
+      "provider": "datacite"
+    },
+    "oai": {
+      "identifier": "oai:zenodo.org:18447565",
+      "provider": "oai"
+    }
+  },
+  "revision_id": 3,
+  "stats": {
+    "all_versions": {
+      "data_volume": 0.0,
+      "downloads": 0,
+      "unique_downloads": 0,
+      "unique_views": 0,
+      "views": 0
+    },
+    "this_version": {
+      "data_volume": 0.0,
+      "downloads": 0,
+      "unique_downloads": 0,
+      "unique_views": 0,
+      "views": 0
+    }
+  },
+  "status": "published",
+  "swh": {
+    "swhid": "swh:1:dir:792a449dff72823e917c725e2d4bee001d674480;origin=https://doi.org/10.5281/zenodo.18447564;visit=swh:1:snp:f9c57d377f5572a75d44ecaf1a11bb42120d29bf;anchor=swh:1:rel:b763fe6a09fe9dcb0fa6676ac8cf577eacd8ab37;path=calisweetleaf-Reinforcement-Learning-Full-Pipeline-52af882"
+  },
+  "updated": "2026-02-01T07:45:21.870927+00:00",
+  "versions": {
+    "index": 1,
+    "is_latest": true,
+    "is_latest_draft": true
+  }
+}
