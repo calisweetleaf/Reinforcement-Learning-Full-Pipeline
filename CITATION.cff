@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below alongside the terms of the Somnus License."
+authors:
+  - family-names: Rowell
+    given-names: Christian Trey Levi
+    orcid: "https://orcid.org/0009-0008-6550-6316"
+title: "NGSST: Neural Geometric State Space Transformer"
+type: software
+version: "1.0.0"
+date-released: "2026-01-31"
+repository-code: "https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline"
+license-url: "https://github.com/calisweetleaf/NGSST/blob/main/LICENSE"
+keywords:
+  - RLHF
