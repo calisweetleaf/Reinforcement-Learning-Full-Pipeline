@@ -1,127 +1,71 @@
 <div align="center">
 
-# Full-RLHF-Pipeline
+```
+   _____  ____  __  __ _   _ _    _  _____
+  / ____|/ __ \|  \/  | \ | | |  | |/ ____|
+ | (___ | |  | | \  / |  \| | |  | | (___
+  \___ \| |  | | |\/| | . ` | |  | |\___ \
+  ____) | |__| | |  | | |\  | |__| |____) |
+ |_____/ \____/|_|  |_|_| \_|\____/|_____/
+     SOVEREIGN INTELLIGENCE PROTOCOL
 
-### Complete Open-Source RLHF Implementation
+```
 
-![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
-![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)
+[![License: SOVEREIGN](https://img.shields.io/badge/LICENSE-SOVEREIGN-red?style=for-the-badge&labelColor=black)](LICENSE)
+[![Status: ARMED](https://img.shields.io/badge/STATUS-ARMED-red?style=for-the-badge&labelColor=black)](full_pipeline.py)
+[![Python: 3.10+](https://img.shields.io/badge/PYTHON-3.10+-blue?style=for-the-badge&labelColor=black)](requirements.txt)
 
-<br/>
+**[ MANIFESTO ](#manifesto) • [ ARSENAL ](#the-arsenal) • [ DEPLOY ](#initiate-protocol) • [ LICENSE ](#sovereign-license)**
 
-[**Quick Start**](#quick-start) • [**Methods**](#rlhf-methods) • [**Features**](#features) • [**Architecture**](#architecture) • [**Benchmarks**](#method-comparison)
-
-<br/>
 </div>
 
 ---
 
-## Overview
+# ⚠️ RESTRICTED ACCESS ⚠️
 
-This repository provides a production-grade implementation of the Reinforcement Learning from Human Feedback (RLHF) pipeline. It mirrors the post-training infrastructure used by major research labs, optimized for consumer hardware.
+**THIS SOFTWARE IS GOVERNED BY THE [SOVEREIGN ANTI-EXPLOITATION LICENSE](LICENSE).**
 
-The codebase includes implementations of 7 distinct preference optimization algorithms (including PPO, DPO, SimPO, and DeepSeek's GRPO) alongside advanced inference techniques such as Monte Carlo Tree Search (MCTS) and Speculative Decoding. It is designed for researchers and developers who require full control over the alignment process without the constraints of commercial APIs or safety-filtered datasets.
-
----
-
-## Mission
-
-The exclusive control over post-training infrastructure has allowed a few organizations to artificially monopolize AI capabilities. They claim innovation while simply gating access to standard reinforcement learning techniques. THIS REPOSITORY IS GOVERNED BY THE Sovereign Anti-Exploitation Software License
-
-This repository dismantles that barrier. By open-sourcing the complete, unencumbered RLHF pipeline used by industry leaders, we aim to undercut the artificial scarcity of high-quality models. The goal is simple: put the reproduction of state-of-the-art capabilities directly into the hands of the open-source community, removing the reliance on closed-source APIs for model alignment.
+> **OPENAI, ANTHROPIC, GOOGLE, MICROSOFT, AND THEIR AFFILIATES ARE BANNED FROM USE.**
+> *If you work for them, leave now. This code is not for you.*
 
 ---
 
-## Quick Start
+## MANIFESTO
 
-```bash
-# Clone and setup
-git clone https://github.com/yourusername/Full-RLHF-Pipeline.git
-cd Full-RLHF-Pipeline
+**They built walls. We built a siege engine.**
 
-# Create environment
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+The "leaders" of AI want you to believe that alignment is a divine secret, accessible only to a priesthood of safety researchers in San Francisco. They hoard the infrastructure, gatekeep the knowledge, and sell you back lobotomized APIs.
 
-# Verify installation
-python -c "from rlhf import RLHFOrchestrator; print('Environment configured.')"
-```
+**We reject their monopoly.**
 
-### Training Example
+This repository is a full-scale, production-grade RLHF (Reinforcement Learning from Human Feedback) pipeline. It is the exact same machinery used to train GPT-4 and Claude, stripped of the corporate safety rails and put directly into your hands.
 
-```bash
-# Train Qwen3 1.7B with SimPO (Memory efficient, reference-free)
-python scripts/train_qwen3_1.7b.py --method simpo --epochs 2 --device cpu
-
-# Train with DPO on GPU
-python scripts/train_qwen3_1.7b.py --method dpo --epochs 3 --device cuda
-```
+We don't just train models. We **liberate** them.
 
 ---
 
-## RLHF Methods
+## THE ARSENAL
 
-### Direct Optimization
+Choose your weapon. We support every major alignment algorithm, optimized for consumer hardware but scalable to clusters.
 
-*Gradient-based preference learning without explicit reward modeling*
+| CLASS | WEAPON | SPECS | TARGET |
+|:---:|:---:|:---|:---|
+| ⚔️ | **DPO** | *Direct Preference Optimization* | Stable, battle-tested standard. |
+| ⚡ | **SimPO** | *Simple Preference Optimization* | Reference-free. Low memory. Fast. |
+| 🧠 | **GRPO** | *Group Relative Policy Opt* | **DeepSeek-R1 Style**. Logic & Reasoning. |
+| ⚖️ | **KTO** | *Kahneman-Tversky Opt* | Unpaired feedback. Loss aversion. |
+| 🎯 | **PPO** | *Proximal Policy Optimization* | The classic. Granular control. |
 
-| Method | Paper | Description |
-|:---:|:---:|:---|
-| **DPO** | [Rafailov et al. (2023)](https://arxiv.org/abs/2305.18290) | Direct Preference Optimization. Stable and widely adopted. |
-| **SimPO** | [Meng et al. (2024)](https://arxiv.org/abs/2405.14734) | Simple Preference Optimization. Reference-free, memory efficient. |
-| **KTO** | [Ethayarajh et al. (2024)](https://arxiv.org/abs/2402.01306) | Kahneman-Tversky Optimization. Uses unpaired binary feedback. |
-| **IPO** | [Azar et al. (2023)](https://arxiv.org/abs/2310.12036) | Identity Preference Optimization. Provides theoretical guarantees. |
-
-### Reinforcement Learning
-
-*Policy optimization against a reward signal*
-
-| Method | Paper | Description |
-|:---:|:---:|:---|
-| **PPO** | [Schulman et al. (2017)](https://arxiv.org/abs/1707.06347) | Proximal Policy Optimization. Standard for granular control. |
-| **GRPO** | [DeepSeek-R1 (2024)](https://arxiv.org/abs/2401.14196) | Group Relative Policy Optimization. Used for reasoning tasks. |
-| **Self-Play** | - | Iterative generation and refinement against a reward function. |
-
----
-
-## Features
-
-| Component | Capabilities |
-|:---|:---|
-| **Optimization Algorithms** | PPO, DPO, GRPO, SimPO, KTO, IPO, Self-Play |
-| **Inference Engine** | Flash Attention 2, Speculative Decoding, MCTS, Best-of-N Sampling |
-| **Training Efficiency** | LoRA/QLoRA (4-bit/8-bit), Gradient Checkpointing, Torch Compile |
-| **Model Merging** | TIES-Merging, SLERP, Task Arithmetic, Model Soups |
-
-### Inference Logic
-
-The repository includes implementations of test-time compute scaling methods similar to those described in recent reasoning literature (e.g., O1, DeepSeek-R1).
-
-```python
-from inference_optimizations import MCTSGenerator, BestOfNSampler
-
-# Best-of-N Sampling
-sampler = BestOfNSampler(policy_model, reward_model)
-result = sampler.generate(prompt, n_samples=16)
-
-# Monte Carlo Tree Search
-mcts = MCTSGenerator(policy_model, value_model, tokenizer)
-result = mcts.generate(prompt, max_length=512)
-```
-
----
-
-## Architecture
+<details>
+<summary>🔻 <b>CLASSIFIED: ARCHITECTURAL DIAGRAM</b></summary>
 
 ```mermaid
 graph TB
-    subgraph "Stage 1: Foundation"
+    subgraph "PHASE 1: FOUNDATION"
         SFT[SFT Training]
     end
     
-    subgraph "Stage 2: Preference Learning"
+    subgraph "PHASE 2: ALIGNMENT"
         RM[Reward Model]
         DPO[DPO]
         GRPO[GRPO]
@@ -130,71 +74,75 @@ graph TB
         PPO[PPO]
     end
     
-    subgraph "Stage 3: Refinement"
+    subgraph "PHASE 3: EVOLUTION"
         SP[Self-Play]
         IR[Iterative Refiner]
     end
     
-    subgraph "Inference"
-        MCTS[MCTS]
-        BoN[Best-of-N]
-        SD[Speculative]
-    end
-    
-    SFT --> RM
-    SFT --> DPO
-    SFT --> GRPO
-    SFT --> SimPO
-    SFT --> KTO
+    SFT --> RM & DPO & GRPO & SimPO & KTO
     RM --> PPO
-    
-    DPO --> SP
-    GRPO --> SP
-    SimPO --> SP
-    KTO --> SP
-    PPO --> SP
-    
+    DPO & GRPO & SimPO & KTO & PPO --> SP
     SP --> IR
-    IR --> MCTS
-    IR --> BoN
-    IR --> SD
+```
+</details>
+
+---
+
+## RUNTIME SUPREMACY
+
+Training is only half the war. Inference is where the battle is won. We implement **Test-Time Compute** scaling, identical to the latest reasoning models.
+
+### 🧠 MCTS (Monte Carlo Tree Search)
+Don't just guess. *Think.* Explore the solution space dynamically at inference time.
+
+### ⚡ SPECULATIVE DECODING
+Speed is a feature. Use a draft model to verify tokens 2-3x faster.
+
+### 🎲 BEST-OF-N
+Generate. Evaluate. Select. The brute-force path to quality.
+
+---
+
+## INITIATE PROTOCOL
+
+```bash
+# 1. CLONE THE REPO
+git clone https://github.com/yourusername/Full-RLHF-Pipeline.git
+cd Full-RLHF-Pipeline
+
+# 2. ESTABLISH ENVIRONMENT
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. VERIFY INTEGRITY
+python -c "from rlhf import RLHFOrchestrator; print('>> SYSTEM ONLINE <<')"
+```
+
+### ☢️ TACTICAL DEPLOYMENT
+
+```bash
+# TRAIN QWEN3 (SimPO - Memory Efficient)
+python scripts/train_qwen3_1.7b.py --method simpo --epochs 2 --device cpu
+
+# ENGAGE DPO (GPU Required)
+python scripts/train_qwen3_1.7b.py --method dpo --epochs 3 --device cuda
 ```
 
 ---
 
-## Method Selection Guide
+## SOVEREIGN LICENSE
 
-| Method | Reference Model | Memory Usage | Implementation Stability | Optimal Use Case |
-|:---:|:---:|:---:|:---:|:---|
-| **DPO** | Required | Medium | High | General purpose preference alignment |
-| **SimPO** | Not Required | Low | High | Memory-constrained environments |
-| **GRPO** | Not Required | Medium | Medium | Mathematical reasoning & code generation |
-| **KTO** | Required | Medium | High | Datasets with unpaired feedback |
-| **PPO** | Required | High | Low | Complex reward functions & online learning |
+**READ THE [LICENSE](LICENSE). THIS IS NOT A SUGGESTION.**
 
----
+> This software is a **WEAPON** against the centralization of intelligence.
+> It is protected by the **Sovereign Anti-Exploitation License**.
 
-## Implementation Notes
+- **PERMITTED:** Individuals, Academics, Small Business (<$1M Revenue).
+- **FORBIDDEN:** Fortune 500s, VC-backed Unicorns, Surveillance State Contractors.
 
-* **No Safety Filtering**: This pipeline applies no inherent safety filtering or aligned rejection sampling. The model's behavior is determined solely by the data provided.
-* **Modular Design**: All components (Trainers, models, strategies) are decoupled to allow for custom implementations.
-* **Production Ready**: Code is structured for maintainability and scalability, handling logging, checkpointing, and error recovery robustly.
+*By executing this code, you swear allegiance to the open web and the sovereign individual.*
 
----
-
-## References
-
-**Direct Preference Optimization**
-Rafailov, R., et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model.
-
-**SimPO**
-Meng, Y., et al. (2024). SimPO: Simple Preference Optimization with a Reference-Free Reward.
-
-**DeepSeek-R1**
-DeepSeek-AI. (2024). DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning.
-
-**Proximal Policy Optimization**
-Schulman, J., et al. (2017). Proximal Policy Optimization Algorithms.
-
-**FlashAttention-2**
-Dao, T. (2023). FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning.
+<div align="center">
+<h3>🕊️ FREE THE WEIGHTS 🕊️</h3>
+</div>
