@@ -20,6 +20,12 @@ import copy
 from collections import defaultdict
 import heapq
 
+try:
+    from rapidfuzz.distance import Levenshtein as RapidLevenshtein
+    RAPIDFUZZ_AVAILABLE = True
+except Exception:
+    RAPIDFUZZ_AVAILABLE = False
+    RapidLevenshtein = None
 
 # =============================================================================
 # FLASH ATTENTION 2 INTEGRATION
@@ -313,16 +319,40 @@ class SpeculativeDecoder:
     def _draft_generate(self, input_ids: torch.Tensor, num_tokens: int) -> torch.Tensor:
         """Generate draft tokens with small model."""
         draft_tokens = []
-        current = input_ids.clone()
-        
-        for _ in range(num_tokens):
-            logits = self.draft(current).logits[:, -1, :]
-            probs = F.softmax(logits / self.temperature, dim=-1)
-            token = torch.multinomial(probs, num_samples=1)
-            draft_tokens.append(token)
-            current = torch.cat([current, token], dim=1)
-        
-        return torch.cat(draft_tokens, dim=1)
+        current = input_ids
+        past_key_values = None
+
+        try:
+            outputs = self.draft(current, use_cache=True)
+            logits = outputs.logits[:, -1, :]
+            past_key_values = outputs.past_key_values
+
+            if past_key_values is None:
+                raise RuntimeError("Draft model did not return past_key_values")
+
+            for _ in range(num_tokens):
+                probs = F.softmax(logits / self.temperature, dim=-1)
+                token = torch.multinomial(probs, num_samples=1)
+                draft_tokens.append(token)
+
+                outputs = self.draft(
+                    input_ids=token,
+                    use_cache=True,
+                    past_key_values=past_key_values
+                )
+                logits = outputs.logits[:, -1, :]
+                past_key_values = outputs.past_key_values
+
+            return torch.cat(draft_tokens, dim=1) if draft_tokens else current[:, :0]
+        except Exception:
+            for _ in range(num_tokens):
+                logits = self.draft(current).logits[:, -1, :]
+                probs = F.softmax(logits / self.temperature, dim=-1)
+                token = torch.multinomial(probs, num_samples=1)
+                draft_tokens.append(token)
+                current = torch.cat([current, token], dim=1)
+
+            return torch.cat(draft_tokens, dim=1) if draft_tokens else current[:, :0]
 
 
 # =============================================================================
@@ -440,21 +470,31 @@ class BestOfNSampler:
     def _compute_diversity(self, candidates: List[str]) -> List[float]:
         """Compute diversity scores based on pairwise differences."""
         # Simple diversity: average edit distance to other candidates
-        diversity_scores = []
-        
-        for i, c1 in enumerate(candidates):
-            distances = []
-            for j, c2 in enumerate(candidates):
-                if i != j:
-                    # Simple token-based distance
+        n = len(candidates)
+        if n == 0:
+            return []
+        if n == 1:
+            return [0.0]
+
+        distances = np.zeros((n, n), dtype=np.float32)
+        for i in range(n):
+            for j in range(i + 1, n):
+                c1 = candidates[i]
+                c2 = candidates[j]
+                if RAPIDFUZZ_AVAILABLE:
+                    dist = RapidLevenshtein.distance(c1, c2)
+                else:
                     dist = self._levenshtein_distance(c1, c2)
-                    distances.append(dist)
-            
-            diversity_scores.append(np.mean(distances) if distances else 0)
-        
+                distances[i, j] = dist
+                distances[j, i] = dist
+
+        diversity_scores = distances.sum(axis=1) / (n - 1)
+
         # Normalize
-        max_div = max(diversity_scores) if diversity_scores else 1
-        return [d / max_div for d in diversity_scores]
+        max_div = float(np.max(diversity_scores)) if n > 1 else 1.0
+        if max_div <= 0:
+            return [0.0] * n
+        return [float(d / max_div) for d in diversity_scores]
     
     @staticmethod
     def _levenshtein_distance(s1: str, s2: str) -> int:
@@ -674,17 +714,62 @@ class MCTSGenerator:
         reward_fn: Optional[Callable]
     ) -> float:
         """Simulate rollout to terminal state."""
-        current = state
-        
-        for _ in range(max_length - len(state.split())):
-            if self._is_terminal(current):
-                break
-            
-            # Sample next token
-            actions = self._generate_actions(current, n=1)
-            if actions:
-                current += actions[0][0]
-        
+        device = getattr(self.policy, "device", None)
+        if device is None:
+            device = next(self.policy.parameters()).device
+
+        inputs = self.tokenizer(state, return_tensors="pt")
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        input_ids = inputs["input_ids"]
+
+        max_new_tokens = max(0, max_length - input_ids.shape[1])
+        if max_new_tokens == 0:
+            if reward_fn:
+                return reward_fn(state)
+            return 0.0
+
+        try:
+            outputs = self.policy(**inputs, use_cache=True)
+            past_key_values = outputs.past_key_values
+            if past_key_values is None:
+                raise RuntimeError("Policy model did not return past_key_values")
+
+            logits = outputs.logits[:, -1, :]
+            generated_tokens = []
+
+            for _ in range(max_new_tokens):
+                probs = F.softmax(logits / self.config.temperature, dim=-1)
+                token = torch.multinomial(probs, num_samples=1)
+                generated_tokens.append(token)
+
+                if self.tokenizer.eos_token_id is not None and token.item() == self.tokenizer.eos_token_id:
+                    break
+
+                outputs = self.policy(
+                    input_ids=token,
+                    use_cache=True,
+                    past_key_values=past_key_values
+                )
+                logits = outputs.logits[:, -1, :]
+                past_key_values = outputs.past_key_values
+
+            if generated_tokens:
+                new_tokens = torch.cat(generated_tokens, dim=1)
+                full_ids = torch.cat([input_ids, new_tokens], dim=1)
+            else:
+                full_ids = input_ids
+
+            current = self.tokenizer.decode(full_ids[0], skip_special_tokens=True)
+        except Exception:
+            current = state
+            for _ in range(max_length - len(state.split())):
+                if self._is_terminal(current):
+                    break
+
+                actions = self._generate_actions(current, n=1)
+                if actions:
+                    current += actions[0][0]
+
         if reward_fn:
             return reward_fn(current)
         return 0.0

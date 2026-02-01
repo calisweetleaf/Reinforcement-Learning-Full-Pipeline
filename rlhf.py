@@ -3352,6 +3352,58 @@ class PPOTrainer:
         returns = returns * response_mask
 
         return advantages, returns
+
+    def _compute_rewards_batched(
+        self,
+        prompts: List[str],
+        responses: List[str],
+        batch_size: int = 32
+    ) -> torch.Tensor:
+        """Compute rewards for multiple prompt-response pairs with batching when possible."""
+        if len(prompts) != len(responses):
+            raise ValueError("Prompts and responses must have the same length")
+        if not prompts:
+            return torch.tensor([], device=self.device_manager.device)
+
+        reward_model = getattr(self.reward_fn, "reward_model", None)
+        tokenizer = getattr(self.reward_fn, "tokenizer", None)
+        device = getattr(self.reward_fn, "device", self.device_manager.device)
+
+        if reward_model is not None and tokenizer is not None:
+            reward_model.eval()
+            all_rewards = []
+            for i in range(0, len(prompts), batch_size):
+                batch_prompts = prompts[i:i + batch_size]
+                batch_responses = responses[i:i + batch_size]
+
+                full_texts = [p + r for p, r in zip(batch_prompts, batch_responses)]
+                inputs = tokenizer(
+                    full_texts,
+                    return_tensors='pt',
+                    padding=True,
+                    truncation=True,
+                    max_length=2048
+                )
+                inputs = {k: v.to(device) for k, v in inputs.items()}
+
+                with torch.no_grad():
+                    rewards = reward_model(
+                        inputs['input_ids'],
+                        inputs['attention_mask']
+                    )
+                all_rewards.append(rewards)
+
+            return torch.cat(all_rewards, dim=0)
+
+        rewards = []
+        for prompt, response in zip(prompts, responses):
+            try:
+                rewards.append(self.reward_fn(prompt, response))
+            except Exception as e:
+                logging.warning(f"Reward computation failed for prompt '{prompt[:50]}...': {e}")
+                rewards.append(0.0)
+
+        return torch.tensor(rewards, device=self.device_manager.device)
     
     def _collect_rollout(
         self,
@@ -3380,11 +3432,27 @@ class PPOTrainer:
             
             # Compute rewards (external reward function)
             rewards = torch.zeros(output_ids.size(0), output_ids.size(1), device=self.device_manager.device)
+            reward_indices = []
+            reward_positions = []
+            reward_prompts = []
+            reward_responses = []
             for i, (prompt, response) in enumerate(zip(prompts_text, responses_text)):
                 # Apply reward at last response token
                 response_len = (output_mask[i, prompt_len:] == 1).sum().item()
                 if response_len > 0:
-                    rewards[i, prompt_len + response_len - 1] = self.reward_fn(prompt, response)
+                    reward_indices.append(i)
+                    reward_positions.append(prompt_len + response_len - 1)
+                    reward_prompts.append(prompt)
+                    reward_responses.append(response)
+
+            if reward_prompts:
+                reward_values = self._compute_rewards_batched(
+                    reward_prompts,
+                    reward_responses,
+                    batch_size=self.config.mini_batch_size
+                )
+                for idx, pos, reward_value in zip(reward_indices, reward_positions, reward_values):
+                    rewards[idx, pos] = reward_value
             
             # Get log probs and values (per-token values for GAE)
             with torch.no_grad():
@@ -4837,7 +4905,10 @@ class RewardFunctionFactory:
                     inputs['attention_mask']
                 )
             return reward.item()
-        
+
+        reward_fn.reward_model = reward_model
+        reward_fn.tokenizer = tokenizer
+        reward_fn.device = device
         return reward_fn
 
     @staticmethod
@@ -4999,6 +5070,11 @@ class ConstitutionalRewardWrapper:
         # Compile patterns
         import re
         self.harmful_regex = [re.compile(p, re.IGNORECASE) for p in self.harmful_patterns]
+        self._specificity_regexes = {
+            "numbers": re.compile(r"\\d+"),
+            "examples": re.compile(r"(for example|such as|e\\.g\\.|i\\.e\\.)", re.IGNORECASE),
+            "structure": re.compile(r"(first|second|third|\\d\\.|\\*|\\-)")
+        }
 
     def _score_helpfulness(self, prompt: str, completion: str) -> float:
         """
@@ -5022,12 +5098,11 @@ class ConstitutionalRewardWrapper:
             score -= 0.1  # Penalty for verbosity
 
         # Specificity (contains numbers, examples, citations)
-        import re
-        if re.search(r'\d+', completion):
+        if self._specificity_regexes["numbers"].search(completion):
             score += 0.1  # Contains numbers/data
-        if re.search(r'(for example|such as|e\.g\.|i\.e\.)', completion, re.IGNORECASE):
+        if self._specificity_regexes["examples"].search(completion):
             score += 0.1  # Contains examples
-        if re.search(r'(first|second|third|\d\.|\*|\-)', completion):
+        if self._specificity_regexes["structure"].search(completion):
             score += 0.1  # Has structure (lists, steps)
 
         # Question answering (if prompt is a question, does completion answer it?)

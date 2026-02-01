@@ -18,6 +18,12 @@
 - Full end-to-end run of SFT -> RM -> PO (DPO/GRPO/SimPO/KTO/PPO) not executed for this release.
 - No automated test suite executed (no `tests/` in this repo).
 
+## Recent Fixes (2026-02-01)
+
+- PPO rollout reward computation now batches reward model inference when available and keeps sequential fallback for custom reward functions.
+- Reward specificity regex patterns are compiled once per ConstitutionalRewardWrapper instance.
+- Inference optimizations: draft generation uses cache-aware sampling, diversity scoring uses faster pairwise computation with optional RapidFuzz, MCTS rollout uses incremental decoding with KV cache fallback.
+
 ## Dataset Stack (Recommended Default)
 
 - Stage 1: SFT -> `Magpie-Align/Magpie-Pro-300K-Filtered`
