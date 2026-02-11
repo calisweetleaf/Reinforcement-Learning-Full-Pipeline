@@ -186,13 +186,14 @@ graph TB
 
 If you use any methods, code, orrepository in your research, please cite it aswell as adhere to the license terms.
 
-```mla
-Christian Trey Rowell. (2026). calisweetleaf/Reinforcement-Learning-Full-Pipeline: v1.0.0 (v1.0.0). Zenodo. <https://doi.org/10.5281/zenodo.18447565>
+```apa
+Rowell, C. T. L. (2026). Reinforcement Learning Multi Method Pipeline and Inference tooling (v1.0.1). Zenodo. <https://doi.org/10.5281/zenodo.18607464>
 ```
+
 
 ## Zenodo and DOI
 
-- [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18447565.svg)](https://doi.org/10.5281/zenodo.18447565)
+- [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18447565.svg)](https://doi.org/10.5281/zenodo.18607464)
 
 ---
 
