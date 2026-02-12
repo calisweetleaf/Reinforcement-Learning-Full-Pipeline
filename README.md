@@ -4,9 +4,14 @@
 
 ### Complete Open-Source RLHF Implementation
 
-![Python 3.10+](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white)
-![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)
+
+![Python 3.12+](https://img.shields.io/badge/Python-3.12+-3776AB?style=for-the-badge&logo=python&logoColor=yellow)
+
+![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=orange)
+
+![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)](https://github.com/calisweetleaf/somnus-license)
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18607464.svg)](https://doi.org/10.5281/zenodo.18607464)
 
 <br/>
 
@@ -186,15 +191,11 @@ graph TB
 
 If you use any methods, code, orrepository in your research, please cite it aswell as adhere to the license terms.
 
-```mla
-Christian Trey Rowell. (2026). calisweetleaf/Reinforcement-Learning-Full-Pipeline: v1.0.0 (v1.0.0). Zenodo. <https://doi.org/10.5281/zenodo.18447565>
+```bibtex
+@misc{https://doi.org/10.5281/zenodo.18607464, doi = {10.5281/ZENODO.18607464}, url = {https://zenodo.org/doi/10.5281/zenodo.18607464}, author = {Rowell, Christian Trey Levi}, keywords = {RLHF, DPO, PPO, Reinforcement Learning}, title = {Reinforcement Learning Multi Method Pipeline and Inference tooling}, publisher = {Zenodo}, year = {2026}, copyright = {Sovereign Anti-Exploitation Software License }}
 ```
 
-## Zenodo and DOI
-
-- [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18447565.svg)](https://doi.org/10.5281/zenodo.18447565)
-
----
+--
 
 ## References
 
