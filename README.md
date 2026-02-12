@@ -8,12 +8,9 @@
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=orange)
 
-![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)](https://github.com/calisweetleaf/somnus-license)
+![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18607464.svg)](https://doi.org/10.5281/zenodo.18607464)
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18607464.svg)](https://doi.org/10.5281/zenodo.18607464)
-
 
 <br/>
 
