@@ -55,6 +55,7 @@ loss = -F.logsigmoid(beta * (chosen_logratios - rejected_logratios))
 #### Hinge DPO
 
 Maximum margin approach:
+
 ```python
 loss = torch.relu(1 - beta * (chosen_logratios - rejected_logratios))
 ```
@@ -62,6 +63,7 @@ loss = torch.relu(1 - beta * (chosen_logratios - rejected_logratios))
 #### IPO (Identity Preference Optimization)
 
 Removes β from the log-ratio scaling:
+
 ```
 L_IPO = (log(π(y_w|x)/π_ref(y_w|x)) - log(π(y_l|x)/π_ref(y_l|x)) - 1/(2β))^2
 ```
@@ -77,12 +79,14 @@ L_IPO = (log(π(y_w|x)/π_ref(y_w|x)) - log(π(y_l|x)/π_ref(y_l|x)) - 1/(2β))^
 ### When to Use
 
 ✅ **Use DPO when**:
+
 - You have high-quality paired preference data
 - You want simple, stable training
 - You need to stay close to the reference model
 - Training budget is limited
 
 ❌ **Avoid when**:
+
 - You need online learning from environment rewards
 - You have unpaired preference data (use KTO instead)
 - You need group-based sampling (use GRPO)
@@ -119,6 +123,7 @@ GRPO is the training method used in DeepSeek-R1. It eliminates the need for a va
 ### Key Innovation
 
 Instead of training a critic network to estimate values, GRPO:
+
 1. Samples G completions for each prompt
 2. Computes rewards for each completion
 3. Uses the mean reward as baseline (advantage = R_i - mean(R))
@@ -144,6 +149,7 @@ objective = min(ratio * A, clipped_ratio * A) - β * KL(π_new || π_ref)
 ### Mathematical Formulation
 
 **Objective**:
+
 ```
 J_GRPO(θ) = E_{x~D, {y_i}_{i=1}^G ~ π_θ} [
     (1/G) Σ_i min(
@@ -168,23 +174,27 @@ where A_i = R(y_i, x) - (1/G) Σ_j R(y_j, x)
 ### Reward Functions
 
 **Verifiable Rewards** (best for GRPO):
+
 - Math problems: Check if answer matches ground truth
 - Code: Execute and check test cases
 - Logic puzzles: Verify solution correctness
 
 **Model-Based Rewards**:
+
 - Use trained reward model
 - Process reward model for step-by-step
 
 ### When to Use
 
 ✅ **Use GRPO when**:
+
 - You have verifiable rewards (math, code, logic)
 - You want to avoid training a value model
 - You're doing reasoning-focused training
 - You can afford multiple samples per prompt
 
 ❌ **Avoid when**:
+
 - Rewards are expensive to compute (sampling G times)
 - You have purely subjective preferences
 - Memory is severely constrained
@@ -232,6 +242,7 @@ r_simpo(x, y) = (1/|y|) * log π(y|x) = (1/|y|) * Σ_t log π(y_t|x, y_{<t})
 ```
 
 Then optimizes:
+
 ```
 L_SimPO = -log σ(β * (r(x, y_w) - r(x, y_l)) - γ)
 ```
@@ -241,11 +252,13 @@ where γ is a target margin.
 ### Mathematical Formulation
 
 **Length-Normalized Reward**:
+
 ```
 r(x, y) = (1/|y|) * log π(y|x)
 ```
 
 **SimPO Loss**:
+
 ```
 L = -E[(x, y_w, y_l)~D] [log σ(β * (r(x, y_w) - r(x, y_l)) - γ)]
 ```
@@ -263,12 +276,14 @@ The length normalization is crucial - without it, the model learns to generate s
 ### When to Use
 
 ✅ **Use SimPO when**:
+
 - You have strict memory constraints
 - You want the fastest training
 - You don't have a good reference model
 - You're doing continued training
 
 ❌ **Avoid when**:
+
 - You need strong regularization to reference
 - Your data has high variance in response lengths
 - You need precise control over KL divergence
@@ -313,6 +328,7 @@ KTO enables training from non-paired preference data. You only need examples lab
 ### Key Innovation
 
 KTO models the human preference process as:
+
 1. Humans imagine a reference outcome
 2. They compare actual outcome to reference
 3. Losses hurt more than equivalent gains feel good (loss aversion)
@@ -320,18 +336,21 @@ KTO models the human preference process as:
 ### Mathematical Formulation
 
 **Ideal Generation Probability**:
+
 ```
 π(y|x) = π(y|x)^λ_d if y is desirable
 π(y|x) = π(y|x)^λ_u if y is undesirable
 ```
 
 **KTO Loss**:
+
 ```
 L_KTO = E_{x,y~D_desirable} [λ_d * (1 - σ(β * KL(π(y|x) || π_ref(y|x))))]
       + E_{x,y~D_undesirable} [λ_u * σ(β * KL(π(y|x) || π_ref(y|x)))]
 ```
 
 **KL Estimation via EMA**:
+
 ```
 KL_EMA = α * KL_current + (1-α) * KL_EMA
 ```
@@ -350,12 +369,14 @@ KL_EMA = α * KL_current + (1-α) * KL_EMA
 ### When to Use
 
 ✅ **Use KTO when**:
+
 - You have natural data without paired comparisons
 - Collecting paired data is expensive
 - You want to use all available data (including unpaired)
 - You have implicit feedback (clicks, time-spent)
 
 ❌ **Avoid when**:
+
 - You have high-quality paired data (DPO may work better)
 - You need fine-grained preference distinctions
 
@@ -407,6 +428,7 @@ IPO is a variant of DPO that removes the β parameter from inside the log-ratio,
 ### Mathematical Formulation
 
 **IPO Loss**:
+
 ```
 L_IPO = E[(x, y_w, y_l)~D] [
     (log(π(y_w|x)/π_ref(y_w|x)) - log(π(y_l|x)/π_ref(y_l|x)) - 1/(2β))^2
@@ -414,6 +436,7 @@ L_IPO = E[(x, y_w, y_l)~D] [
 ```
 
 This is a squared loss instead of log-loss, which:
+
 - Prevents the model from over-optimizing preferences
 - Provides more stable gradients
 - Has a natural interpretation as matching a target gap
@@ -421,6 +444,7 @@ This is a squared loss instead of log-loss, which:
 ### When to Use
 
 ✅ **Use IPO when**:
+
 - DPO training is unstable
 - You're seeing over-optimization (reward hacking)
 - You want more conservative updates
@@ -509,12 +533,14 @@ where δ_t = r_t + γV(s_{t+1}) - V(s_t)
 ### When to Use
 
 ✅ **Use PPO when**:
+
 - You have a trained reward model
 - You want maximum control over training
 - You need online learning capability
 - You have sufficient compute for value model training
 
 ❌ **Avoid when**:
+
 - You want simpler implementation (use DPO/GRPO)
 - Memory is constrained (needs 3+ models)
 - You don't have a good reward model

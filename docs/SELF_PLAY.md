@@ -7,11 +7,13 @@ Self-play is a training paradigm where a model improves by competing against its
 ## Why Self-Play Matters
 
 Traditional RLHF has limitations:
+
 1. **Human bottleneck**: Quality feedback is expensive and slow
 2. **Distribution shift**: Models can overfit to specific reward models
 3. **Capability ceiling**: Limited by the quality of human annotators
 
 Self-play breaks these limits by:
+
 - Generating its own training data through competition
 - Discovering strategies humans might miss
 - Continuously improving through iterative refinement
@@ -32,6 +34,7 @@ Current Policy ──▶ Generates completion A
 ```
 
 **Implementation**:
+
 ```python
 class CompetitiveSelfPlay:
     def __init__(self, policy, reference_policy, reward_fn):
@@ -74,12 +77,14 @@ Prompt ──▶ Generate(v0) ──▶ Critique ──▶ Refine(v1)
 ```
 
 **Process**:
+
 1. **Generate**: Initial response to prompt
 2. **Critique**: Model analyzes its own output for errors
 3. **Refine**: Model produces improved version
 4. **Train**: Use (v0, critique, v1) as training data
 
 **Implementation**:
+
 ```python
 class IterativeRefiner:
     def __init__(self, policy):
@@ -145,6 +150,7 @@ Prompt ──▶ Response ──▶ Evaluate against constitution ──▶ Refi
 ```
 
 **Implementation**:
+
 ```python
 class ConstitutionalRewardWrapper:
     def __init__(self, base_reward_fn, constitution):
@@ -313,16 +319,19 @@ Track these metrics during self-play:
 ## Applications
 
 ### Reasoning Tasks
+
 - Math problem solving
 - Code generation
 - Logical puzzles
 
 ### Creative Tasks
+
 - Story generation
 - Dialogue systems
 - Content creation
 
 ### Strategic Tasks
+
 - Game playing
 - Debate
 - Negotiation
