@@ -1939,10 +1939,10 @@ class CheckpointManager:
             return 0
         
         latest = ckpts[-1]
-        model.load_state_dict(torch.load(latest / "model.pt"))
+        model.load_state_dict(torch.load(latest / "model.pt", map_location="cpu"))
         
         if optimizer:
-            optimizer.load_state_dict(torch.load(latest / "optimizer.pt"))
+            optimizer.load_state_dict(torch.load(latest / "optimizer.pt", map_location="cpu"))
         
         with open(latest / "metadata.json", 'r') as f:
             metadata = json.load(f)
@@ -2088,13 +2088,22 @@ class SFTTrainer:
                     self.model.train()
                 
                 # Checkpointing
-                if global_step % self.config.save_steps == 0:
+                if global_step > 0 and global_step % self.config.save_steps == 0:
                     ckpt_manager.save(
                         self.model, optimizer, global_step,
                         {'loss': epoch_loss / (step + 1)}
                     )
             
             logger.info(f"Epoch {epoch} completed. Avg loss: {epoch_loss / len(train_dataloader):.4f}")
+
+        # Ensure a final checkpoint is always materialized, including tiny runs.
+        if global_step > 0 and (global_step % self.config.save_steps != 0):
+            ckpt_manager.save(
+                self.model,
+                optimizer,
+                global_step,
+                {'loss': epoch_loss / max(len(train_dataloader), 1)},
+            )
         
         training_logger.finish()
         return {'train_loss': [epoch_loss / len(train_dataloader)]}
@@ -2385,7 +2394,7 @@ class ProcessRewardModelTrainer:
                         "learning_rate": optimizer.param_groups[0]['lr']
                     }, step=global_step)
 
-                if global_step % self.config.save_steps == 0:
+                if global_step > 0 and global_step % self.config.save_steps == 0:
                     ckpt_manager.save(
                         self.model, optimizer, global_step,
                         {"loss": epoch_loss / (step + 1)}
@@ -2396,6 +2405,15 @@ class ProcessRewardModelTrainer:
                 training_logger.log({"accuracy": accuracy}, step=global_step)
 
             logger.info(f"Epoch {epoch}: Avg Loss: {epoch_loss / len(train_dataloader):.4f}")
+
+        # Ensure final checkpoint exists even when save_steps is larger than the run.
+        if global_step > 0 and (global_step % self.config.save_steps != 0):
+            ckpt_manager.save(
+                self.model,
+                optimizer,
+                global_step,
+                {"loss": epoch_loss / max(len(train_dataloader), 1)},
+            )
 
         training_logger.finish()
         return {"train_loss": [epoch_loss / len(train_dataloader)]}
@@ -2540,7 +2558,10 @@ class DPOTrainer:
         )
         
         self.policy_model.train()
-        global_step = 0
+        start_step = 0
+        if self.config.resume_from_checkpoint:
+            start_step = ckpt_manager.load_latest(self.policy_model, optimizer)
+        global_step = start_step
         
         for epoch in range(self.config.num_epochs):
             epoch_loss = 0.0
@@ -2568,13 +2589,22 @@ class DPOTrainer:
                         'learning_rate': optimizer.param_groups[0]['lr']
                     }, step=global_step)
                 
-                if global_step % self.config.save_steps == 0:
+                if global_step > 0 and global_step % self.config.save_steps == 0:
                     ckpt_manager.save(
                         self.policy_model, optimizer, global_step,
                         {'loss': epoch_loss / (step + 1)}
                     )
             
             logger.info(f"Epoch {epoch}: Avg Loss: {epoch_loss / len(train_dataloader):.4f}")
+
+        # Always persist a final checkpoint so short runs still have recovery points.
+        if global_step > 0 and (global_step % self.config.save_steps != 0):
+            ckpt_manager.save(
+                self.policy_model,
+                optimizer,
+                global_step,
+                {'loss': epoch_loss / max(len(train_dataloader), 1)},
+            )
         
         training_logger.finish()
         return {'train_loss': [epoch_loss / len(train_dataloader)]}
@@ -3994,6 +4024,120 @@ def get_7b_model_config(output_dir: str = "./output") -> Dict[str, Any]:
             output_dir=os.path.join(output_dir, "ppo"),
             use_amp=True
         )
+    }
+
+
+def get_qwen3_1p7b_vps_config(output_dir: str = "./output") -> Dict[str, Any]:
+    """Memory-safe starter config for single-GPU VPS runs on Qwen3-1.7B."""
+    return {
+        'sft': SFTConfig(
+            learning_rate=3e-6,
+            batch_size=1,
+            gradient_accumulation_steps=16,
+            num_epochs=2,
+            warmup_ratio=0.03,
+            max_seq_length=2048,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "sft"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'reward_model': RewardModelConfig(
+            learning_rate=8e-6,
+            batch_size=1,
+            gradient_accumulation_steps=8,
+            num_epochs=2,
+            ensemble_size=1,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "reward_model"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'dpo': DPOConfig(
+            learning_rate=3e-7,
+            batch_size=1,
+            gradient_accumulation_steps=8,
+            num_epochs=2,
+            beta=0.1,
+            loss_type="sigmoid",
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "dpo"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'grpo': GRPOConfig(
+            learning_rate=5e-7,
+            batch_size=1,
+            gradient_accumulation_steps=8,
+            num_epochs=1,
+            group_size=4,
+            clip_ratio=0.2,
+            kl_coeff=0.01,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "grpo"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'simpo': SimPOConfig(
+            learning_rate=3e-7,
+            batch_size=1,
+            gradient_accumulation_steps=8,
+            num_epochs=1,
+            beta=2.0,
+            gamma=0.5,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "simpo"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'kto': KTOConfig(
+            learning_rate=3e-7,
+            batch_size=1,
+            gradient_accumulation_steps=8,
+            num_epochs=1,
+            beta=0.1,
+            lambda_d=1.5,
+            lambda_u=1.0,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "kto"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
+        'ppo': PPOConfig(
+            learning_rate=5e-7,
+            batch_size=1,
+            gradient_accumulation_steps=16,
+            num_epochs=2,
+            kl_coeff=0.02,
+            clip_ratio=0.2,
+            value_loss_coef=0.5,
+            entropy_coef=0.01,
+            logging_steps=5,
+            save_steps=20,
+            save_total_limit=5,
+            output_dir=os.path.join(output_dir, "ppo"),
+            use_amp=True,
+            use_wandb=False,
+            bf16=True,
+        ),
     }
 
 
@@ -5908,6 +6052,8 @@ __all__ = [
     'setup_logging',
     'create_optimizer',
     'get_7b_model_config',
+    'get_qwen3_1p7b_vps_config',
+    'get_70b_model_config',
 
     # Examples
     'example_orchestrator_usage',
@@ -7222,6 +7368,7 @@ class RLHFOrchestrator:
         process_reward_weight: float = 0.0,
         process_step_detection: str = "newline",
         use_process_reward_model: bool = False,
+        auto_save_final_models: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -7234,6 +7381,7 @@ class RLHFOrchestrator:
             sft_config: Optional SFT configuration
             rm_config: Optional reward model configuration
             po_config: Optional policy optimization configuration
+            auto_save_final_models: Save final model bundle under output_dir/final_models
             **kwargs: Additional arguments passed to policy optimization
 
         Returns:
@@ -7283,13 +7431,19 @@ class RLHFOrchestrator:
             logger.info("=" * 80)
             logger.info(f"Total time: {elapsed_time / 60:.2f} minutes")
 
+            saved_model_dir = None
+            if auto_save_final_models:
+                self.save_models()
+                saved_model_dir = str(self.output_dir / "final_models")
+
             return {
                 'policy_model': self.policy_model,
                 'reward_models': self.reward_models,
                 'value_model': self.value_model,
                 'tokenizer': self.tokenizer,
                 'training_history': self.training_history,
-                'elapsed_time': elapsed_time
+                'elapsed_time': elapsed_time,
+                'saved_model_dir': saved_model_dir,
             }
 
         except Exception as e:
