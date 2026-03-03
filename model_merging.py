@@ -12,10 +12,13 @@ Implements:
 import torch
 import torch.nn as nn
 import copy
-from typing import List, Dict, Tuple, Optional, Callable
+from typing import List, Dict, Tuple, Optional, Callable, Any
 import numpy as np
 from dataclasses import dataclass
 import re
+import json
+import time
+from pathlib import Path
 
 
 @dataclass
@@ -137,8 +140,9 @@ class ModelMerger:
             for key, tensor in delta.items():
                 # Flatten and find threshold
                 flat = tensor.abs().flatten()
-                k = int(config.density * flat.numel())
-                threshold = torch.kthvalue(flat, k)[0] if k > 0 else float('inf')
+                keep_count = max(1, int(config.density * flat.numel()))
+                kth = max(1, flat.numel() - keep_count + 1)
+                threshold = torch.kthvalue(flat, kth)[0]
                 
                 # Create mask for top-k%
                 mask = tensor.abs() >= threshold
@@ -146,7 +150,7 @@ class ModelMerger:
             trimmed_deltas.append(trimmed)
         
         # Step 2: Elect Sign (majority vote)
-        elected_deltas = []
+        elected_deltas = [{} for _ in trimmed_deltas]
         for key in trimmed_deltas[0].keys():
             # Collect signs from all models
             signs = [torch.sign(d[key]) for d in trimmed_deltas]
@@ -159,9 +163,6 @@ class ModelMerger:
             for i, delta in enumerate(trimmed_deltas):
                 mask = torch.sign(delta[key]) == majority_sign
                 elected = delta[key] * mask
-                
-                if key not in elected_deltas:
-                    elected_deltas.append({})
                 elected_deltas[i][key] = elected
         
         # Step 3: Merge (average)
@@ -170,6 +171,57 @@ class ModelMerger:
             merged[key] = sum(d[key] for d in elected_deltas) / len(elected_deltas)
         
         return merged
+
+
+def list_stage_checkpoints(checkpoint_root: str, stage_name: Optional[str] = None) -> List[Path]:
+    """
+    List checkpoint directories produced by rlhf.CheckpointManager.
+
+    Example names:
+      - DPO_step_20
+      - SFT_step_40
+    """
+    root = Path(checkpoint_root)
+    pattern = f"{stage_name}_step_*" if stage_name else "*_step_*"
+    return sorted(root.glob(pattern), key=lambda p: p.stat().st_mtime)
+
+
+def load_checkpoint_state_dict(checkpoint_dir: str) -> Dict[str, torch.Tensor]:
+    """Load model.pt state_dict from a checkpoint directory."""
+    ckpt_dir = Path(checkpoint_dir)
+    model_path = ckpt_dir / "model.pt"
+    if not model_path.exists():
+        raise FileNotFoundError(f"Checkpoint model not found: {model_path}")
+    return torch.load(model_path, map_location="cpu")
+
+
+def save_merge_artifact(
+    merged_model: nn.Module,
+    output_dir: str,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Save merged model state_dict and a JSON manifest for provenance tracking.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    model_path = out / "merged_model.pt"
+    torch.save(merged_model.state_dict(), model_path)
+
+    manifest = {
+        "created_at_unix": time.time(),
+        "model_path": str(model_path),
+        "metadata": metadata or {},
+    }
+    manifest_path = out / "merge_manifest.json"
+    with manifest_path.open("w", encoding="utf-8") as fh:
+        json.dump(manifest, fh, indent=2)
+
+    return {
+        "model_path": str(model_path),
+        "manifest_path": str(manifest_path),
+    }
     
     def _slerp_merge(
         self,

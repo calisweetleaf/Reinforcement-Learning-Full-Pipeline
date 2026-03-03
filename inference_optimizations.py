@@ -161,6 +161,7 @@ class PagedKVCache:
         # Track allocation
         self.free_pages = list(range(max_pages))
         self.sequence_pages = {}  # seq_id -> list of page indices
+        self.sequence_lengths = {}  # seq_id -> actual token count
     
     def allocate(self, seq_id: str, num_tokens: int) -> List[int]:
         """Allocate pages for a sequence."""
@@ -171,6 +172,7 @@ class PagedKVCache:
         
         pages = [self.free_pages.pop() for _ in range(num_pages_needed)]
         self.sequence_pages[seq_id] = pages
+        self.sequence_lengths[seq_id] = 0
         return pages
     
     def append_token(self, seq_id: str, layer_idx: int, k: torch.Tensor, v: torch.Tensor):
@@ -190,6 +192,7 @@ class PagedKVCache:
         physical_page = pages[page_idx]
         self.cache[physical_page, 0, offset_in_page] = k  # Key
         self.cache[physical_page, 1, offset_in_page] = v  # Value
+        self.sequence_lengths[seq_id] = seq_len + 1
     
     def get_kv(self, seq_ids: List[str], layer_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """Gather KV tensors for a batch of sequences."""
@@ -198,16 +201,28 @@ class PagedKVCache:
         
         for seq_id in seq_ids:
             pages = self.sequence_pages[seq_id]
-            seq_k = []
-            seq_v = []
-            
-            for page in pages:
-                seq_k.append(self.cache[page, 0])  # Keys
-                seq_v.append(self.cache[page, 1])  # Values
-            
-            # Concatenate pages
-            all_k.append(torch.cat(seq_k, dim=0))
-            all_v.append(torch.cat(seq_v, dim=0))
+            seq_len = self.get_sequence_length(seq_id)
+            seq_k_tokens = []
+            seq_v_tokens = []
+
+            for token_idx in range(seq_len):
+                page_idx = token_idx // self.page_size
+                offset = token_idx % self.page_size
+                physical_page = pages[page_idx]
+                seq_k_tokens.append(self.cache[physical_page, 0, offset])
+                seq_v_tokens.append(self.cache[physical_page, 1, offset])
+
+            if seq_k_tokens:
+                all_k.append(torch.stack(seq_k_tokens, dim=0))
+                all_v.append(torch.stack(seq_v_tokens, dim=0))
+            else:
+                empty = torch.empty(
+                    (0, self.num_heads, self.head_dim),
+                    dtype=self.cache.dtype,
+                    device=self.cache.device,
+                )
+                all_k.append(empty)
+                all_v.append(empty)
         
         # Pad to same length for batching
         max_len = max(k.size(0) for k in all_k)
@@ -225,15 +240,14 @@ class PagedKVCache:
     
     def get_sequence_length(self, seq_id: str) -> int:
         """Get current length of cached sequence."""
-        if seq_id not in self.sequence_pages:
-            return 0
-        return len(self.sequence_pages[seq_id]) * self.page_size
+        return self.sequence_lengths.get(seq_id, 0)
     
     def free(self, seq_id: str):
         """Free pages for a sequence."""
         if seq_id in self.sequence_pages:
             pages = self.sequence_pages.pop(seq_id)
             self.free_pages.extend(pages)
+            self.sequence_lengths.pop(seq_id, None)
 
 
 # =============================================================================
@@ -672,8 +686,9 @@ class MCTSGenerator:
     
     def _generate_actions(self, state: str, n: int) -> List[Tuple[str, float]]:
         """Generate candidate next actions with probabilities."""
+        device = self._get_policy_device()
         inputs = self.tokenizer(state, return_tensors="pt")
-        inputs = {k: v.to(self.policy.device) for k, v in inputs.items()}
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         
         outputs = self.policy(**inputs)
         logits = outputs.logits[0, -1, :]
@@ -714,9 +729,7 @@ class MCTSGenerator:
         reward_fn: Optional[Callable]
     ) -> float:
         """Simulate rollout to terminal state."""
-        device = getattr(self.policy, "device", None)
-        if device is None:
-            device = next(self.policy.parameters()).device
+        device = self._get_policy_device()
 
         inputs = self.tokenizer(state, return_tensors="pt")
         inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -773,6 +786,16 @@ class MCTSGenerator:
         if reward_fn:
             return reward_fn(current)
         return 0.0
+
+    def _get_policy_device(self) -> torch.device:
+        """Resolve policy device robustly across wrapped and raw modules."""
+        device = getattr(self.policy, "device", None)
+        if device is not None:
+            return torch.device(device)
+        try:
+            return next(self.policy.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
     
     def _backpropagate(self, node: MCTSNode, value: float):
         """Backpropagate value up the tree."""
@@ -786,7 +809,8 @@ class MCTSGenerator:
         # Simple checks
         if len(state) > 2000:  # Max length
             return True
-        if state.endswith(self.tokenizer.eos_token):
+        eos_token = self.tokenizer.eos_token
+        if eos_token and state.endswith(eos_token):
             return True
         return False
     
