@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "profile": "tiny_cpu",
+  "constraints": {
+    "max_ram_gb": 8,
+    "has_gpu": false,
+    "latency_budget_ms": 1000,
+    "quality_priority": false
+  },
+  "selected_configs": {
+    "merge": {
+      "method": "ties",
+      "density": 0.6,
+      "seed": 42
+    },
+    "best_of_n": {
+      "n_samples": 8,
+      "temperature": 0.9,
+      "value_weight": 0.0
+    },
+    "mcts": {
+      "n_simulations": 50,
+      "max_depth": 50,
+      "progressive_widening_alpha": 0.5
+    },
+    "speculative": {
+      "gamma": 5,
+      "gamma_max": 8,
+      "adapt_gamma": true
+    }
+  }
+}

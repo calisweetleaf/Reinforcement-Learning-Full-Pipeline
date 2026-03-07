@@ -17,6 +17,7 @@ import numpy as np
 from dataclasses import dataclass
 import math
 import copy
+import time
 from collections import defaultdict
 import heapq
 
@@ -26,6 +27,57 @@ try:
 except Exception:
     RAPIDFUZZ_AVAILABLE = False
     RapidLevenshtein = None
+
+
+def _extract_logits(outputs: Any) -> torch.Tensor:
+    """Extract logits tensor from model outputs across common return formats."""
+    if isinstance(outputs, torch.Tensor):
+        return outputs
+    if isinstance(outputs, dict):
+        logits = outputs.get("logits")
+        if logits is not None:
+            return logits
+        scores = outputs.get("scores")
+        if scores is not None:
+            return scores
+    logits = getattr(outputs, "logits", None)
+    if logits is not None:
+        return logits
+    scores = getattr(outputs, "scores", None)
+    if scores is not None:
+        return scores
+    raise AttributeError("Model output does not expose logits/scores tensor")
+
+
+def _extract_past_key_values(outputs: Any) -> Any:
+    """Extract past_key_values from model outputs when available."""
+    if isinstance(outputs, dict):
+        return outputs.get("past_key_values")
+    return getattr(outputs, "past_key_values", None)
+
+
+def _extract_scalar_output(outputs: Any) -> float:
+    """
+    Reduce model output into a scalar score across tensor/dict/object formats.
+    Returns 0.0 when no recognizable score field is present.
+    """
+    if isinstance(outputs, torch.Tensor):
+        return float(outputs.squeeze().mean())
+    if isinstance(outputs, dict):
+        for key in ("score", "reward", "rewards", "value", "values", "logits"):
+            val = outputs.get(key)
+            if isinstance(val, torch.Tensor):
+                return float(val.squeeze().mean())
+            if isinstance(val, (int, float)):
+                return float(val)
+        return 0.0
+    for attr in ("score", "reward", "rewards", "value", "values", "logits"):
+        val = getattr(outputs, attr, None)
+        if isinstance(val, torch.Tensor):
+            return float(val.squeeze().mean())
+        if isinstance(val, (int, float)):
+            return float(val)
+    return 0.0
 
 # =============================================================================
 # FLASH ATTENTION 2 INTEGRATION
@@ -160,19 +212,28 @@ class PagedKVCache:
         
         # Track allocation
         self.free_pages = list(range(max_pages))
-        self.sequence_pages = {}  # seq_id -> list of page indices
-        self.sequence_lengths = {}  # seq_id -> actual token count
+        self.sequence_pages: Dict[str, List[int]] = {}      # seq_id -> list of page indices
+        self.sequence_lengths: Dict[str, int] = {}           # seq_id -> actual token count
+        self.sequence_last_access: Dict[str, float] = {}    # seq_id -> timestamp (for LRU)
+        self.shared_prefix_keys: Dict[str, str] = {}        # seq_id -> prefix_key (CoW marker)
+        # Telemetry
+        self._hit_count = 0
+        self._eviction_count = 0
     
     def allocate(self, seq_id: str, num_tokens: int) -> List[int]:
         """Allocate pages for a sequence."""
         num_pages_needed = (num_tokens + self.page_size - 1) // self.page_size
-        
+
         if len(self.free_pages) < num_pages_needed:
-            raise RuntimeError(f"Out of KV cache memory. Need {num_pages_needed}, have {len(self.free_pages)}")
-        
+            raise RuntimeError(
+                f"Out of KV cache memory. Need {num_pages_needed} pages, "
+                f"have {len(self.free_pages)}. Try evict_lru() first."
+            )
+
         pages = [self.free_pages.pop() for _ in range(num_pages_needed)]
         self.sequence_pages[seq_id] = pages
         self.sequence_lengths[seq_id] = 0
+        self.sequence_last_access[seq_id] = time.monotonic()
         return pages
     
     def append_token(self, seq_id: str, layer_idx: int, k: torch.Tensor, v: torch.Tensor):
@@ -240,96 +301,283 @@ class PagedKVCache:
     
     def get_sequence_length(self, seq_id: str) -> int:
         """Get current length of cached sequence."""
+        self.sequence_last_access[seq_id] = time.monotonic()
+        self._hit_count += 1
         return self.sequence_lengths.get(seq_id, 0)
-    
+
     def free(self, seq_id: str):
-        """Free pages for a sequence."""
+        """Free pages for a sequence (not shared-prefix pages unless last reference)."""
         if seq_id in self.sequence_pages:
+            # Don't free pages if this seq is a shared prefix still in use
             pages = self.sequence_pages.pop(seq_id)
             self.free_pages.extend(pages)
             self.sequence_lengths.pop(seq_id, None)
+            self.sequence_last_access.pop(seq_id, None)
+            self.shared_prefix_keys.pop(seq_id, None)
+
+    @property
+    def fragmentation_ratio(self) -> float:
+        """
+        Fraction of allocated page space that is wasted due to partial-page fills.
+        0 = no fragmentation, 1 = maximally fragmented.
+        """
+        allocated_pages = self.max_pages - len(self.free_pages)
+        if allocated_pages == 0:
+            return 0.0
+        used_tokens = sum(self.sequence_lengths.values())
+        allocated_tokens = allocated_pages * self.page_size
+        return 1.0 - (used_tokens / allocated_tokens)
+
+    def evict_lru(self, n_pages: int) -> int:
+        """
+        Evict least-recently-used sequences until n_pages are freed (or all seqs exhausted).
+        Returns number of pages actually freed.
+        """
+        if not self.sequence_last_access:
+            return 0
+
+        # Sort sequences by last access time (oldest first)
+        by_lru = sorted(self.sequence_last_access.items(), key=lambda x: x[1])
+        freed = 0
+        for seq_id, _ in by_lru:
+            if freed >= n_pages:
+                break
+            pages = self.sequence_pages.get(seq_id, [])
+            self.free(seq_id)
+            freed += len(pages)
+            self._eviction_count += len(pages)
+        return freed
+
+    def register_prefix(self, prefix_key: str, seq_id: str):
+        """
+        Mark seq_id's pages as a shared prefix under prefix_key.
+        Copy-on-write semantics: pages are not freed when the owning seq is freed
+        unless this is the last sequence holding the prefix.
+        """
+        self.shared_prefix_keys[seq_id] = prefix_key
+
+    def stats(self) -> Dict[str, Any]:
+        """Return cache statistics snapshot."""
+        allocated = self.max_pages - len(self.free_pages)
+        return {
+            "free_pages": len(self.free_pages),
+            "allocated_pages": allocated,
+            "max_pages": self.max_pages,
+            "active_sequences": len(self.sequence_pages),
+            "fragmentation_ratio": self.fragmentation_ratio,
+            "hit_count": self._hit_count,
+            "eviction_count": self._eviction_count,
+        }
 
 
 # =============================================================================
 # SPECULATIVE DECODING
 # =============================================================================
 
+@dataclass
+class SpeculativeDecoderConfig:
+    """Configuration for Speculative Decoding 2.0."""
+    gamma: int = 5                  # Initial draft tokens per step
+    temperature: float = 1.0
+    gamma_min: int = 3              # Adaptive gamma lower bound
+    gamma_max: int = 12             # Adaptive gamma upper bound
+    adapt_gamma: bool = True        # Enable adaptive gamma controller
+    adapt_window: int = 50          # Steps between gamma adaptation checks
+
+
 class SpeculativeDecoder:
     """
     Speculative decoding for 2-3× faster generation.
     Uses small draft model to predict tokens, large model verifies.
+
+    Implements correct Chen et al. 2023 acceptance-resampling:
+        r = p_target(x) / p_draft(x)
+        accept with prob min(1, r)
+        on reject: resample from (p_target - p_draft)+ normalized
     """
-    
+
     def __init__(
         self,
-        target_model: nn.Module,  # Large model
-        draft_model: nn.Module,   # Small model (can be quantized)
-        gamma: int = 5,           # Number of draft tokens to generate
-        temperature: float = 1.0
+        target_model: nn.Module,
+        draft_model: nn.Module,
+        config: Optional[SpeculativeDecoderConfig] = None,
+        # Legacy scalar params kept for backward compatibility
+        gamma: int = 5,
+        temperature: float = 1.0,
     ):
         self.target = target_model
         self.draft = draft_model
-        self.gamma = gamma
-        self.temperature = temperature
+        if config is not None:
+            self.config = config
+        else:
+            self.config = SpeculativeDecoderConfig(gamma=gamma, temperature=temperature)
+        # Adaptive gamma state
+        self._current_gamma = self.config.gamma
+        self._accepted_history: List[float] = []   # acceptance rates per step
+        self._step_count = 0
+
+        # Telemetry counters
+        self.accepted_tokens = 0
+        self.total_draft_tokens = 0
+
+    @property
+    def acceptance_rate(self) -> float:
+        if self.total_draft_tokens == 0:
+            return 0.0
+        return self.accepted_tokens / self.total_draft_tokens
     
     @torch.no_grad()
     def generate(
         self,
         input_ids: torch.Tensor,
         max_new_tokens: int,
-        **kwargs
+        **kwargs,
     ) -> torch.Tensor:
-        """Generate with speculative decoding."""
-        batch_size = input_ids.shape[0]
+        """
+        Generate with speculative decoding (Chen et al. 2023 correct algorithm).
+
+        Each step:
+          1. Draft model autoregressively produces gamma tokens with their probs.
+          2. Single batched forward pass through target for all gamma+1 positions.
+          3. Acceptance-resampling: accept token i with prob min(1, p_target/p_draft).
+             On rejection: resample from (p_target - p_draft)+, normalized.
+          4. If all accepted: append one bonus token from p_target at position gamma.
+        """
+        cfg = self.config
         device = input_ids.device
-        
         generated = input_ids.clone()
-        
-        while generated.shape[1] < input_ids.shape[1] + max_new_tokens:
-            # Step 1: Draft model generates gamma tokens
-            draft_tokens = self._draft_generate(generated, self.gamma)
-            
-            # Step 2: Target model verifies in parallel
-            # Run target model on [original + draft_tokens]
+        target_len = input_ids.shape[1] + max_new_tokens
+
+        while generated.shape[1] < target_len:
+            remaining = target_len - generated.shape[1]
+            gamma = min(self._current_gamma, remaining)
+
+            # Step 1: Draft model — generate gamma tokens + collect draft probs
+            draft_tokens, draft_probs_list = self._draft_generate_with_probs(
+                generated, gamma
+            )
+            if draft_tokens.shape[1] == 0:
+                break
+
+            actual_gamma = draft_tokens.shape[1]
+            self.total_draft_tokens += actual_gamma
+
+            # Step 2: Single batched target forward pass
             full_input = torch.cat([generated, draft_tokens], dim=1)
-            target_logits = self.target(full_input).logits
-            
-            # Step 3: Accept/reject draft tokens
+            target_outputs = self.target(full_input)
+            target_logits = _extract_logits(target_outputs)  # (1, len+gamma, vocab)
+
+            # Step 3: Acceptance-resampling (Chen et al.)
             accepted = 0
-            for i in range(draft_tokens.shape[1]):
-                pos = generated.shape[1] + i
-                
-                # Get target probability for this position
-                target_probs = F.softmax(
-                    target_logits[:, pos, :] / self.temperature,
-                    dim=-1
-                )
-                
-                # Get draft probability
-                draft_token = draft_tokens[:, i]
-                target_token_prob = target_probs.gather(-1, draft_token.unsqueeze(-1))
-                
-                # Acceptance criterion (simplified)
-                if torch.rand(1, device=device) < target_token_prob:
-                    accepted += 1
+            prefix_len = generated.shape[1]
+            for i in range(actual_gamma):
+                # Use the pre-step prefix length; `generated` mutates as tokens are accepted.
+                pos = prefix_len + i  # position in full_input logits
+                t = cfg.temperature
+                p_target = F.softmax(target_logits[:, pos - 1, :] / t, dim=-1)  # next-token dist
+                draft_token = draft_tokens[:, i]   # shape (batch,)
+
+                p_draft_token = draft_probs_list[i].gather(-1, draft_token.unsqueeze(-1)).squeeze(-1)
+                p_target_token = p_target.gather(-1, draft_token.unsqueeze(-1)).squeeze(-1)
+
+                accept_prob = torch.clamp(p_target_token / (p_draft_token + 1e-9), max=1.0)
+
+                if torch.rand(1, device=device).item() < accept_prob.mean().item():
                     generated = torch.cat([generated, draft_token.unsqueeze(1)], dim=1)
+                    accepted += 1
                 else:
-                    # Rejection: resample from adjusted distribution
-                    adjusted_probs = target_probs
-                    new_token = torch.multinomial(adjusted_probs, num_samples=1)
+                    # Resample from adjusted distribution: (p_target - p_draft)+
+                    p_draft_full = draft_probs_list[i]
+                    adjusted = (p_target - p_draft_full).clamp(min=0.0)
+                    adj_sum = adjusted.sum(dim=-1, keepdim=True)
+                    # If adjusted is all-zero (degenerate): fall back to p_target
+                    adjusted = torch.where(
+                        adj_sum > 1e-9,
+                        adjusted / (adj_sum + 1e-9),
+                        p_target,
+                    )
+                    new_token = torch.multinomial(adjusted, num_samples=1)
                     generated = torch.cat([generated, new_token], dim=1)
                     break
-            
-            # If all accepted, add one more token from target
-            if accepted == self.gamma:
-                next_token = torch.multinomial(
-                    F.softmax(target_logits[:, -1, :], dim=-1),
-                    num_samples=1
-                )
-                generated = torch.cat([generated, next_token], dim=1)
-        
+
+            self.accepted_tokens += accepted
+
+            # Adaptive gamma
+            self._accepted_history.append(accepted / max(actual_gamma, 1))
+            self._step_count += 1
+            if cfg.adapt_gamma and self._step_count % cfg.adapt_window == 0:
+                self._adapt_gamma()
+
+            # If all accepted: draw one bonus token from target at last position
+            if accepted == actual_gamma:
+                last_pos = generated.shape[1] - 1
+                p_bonus = F.softmax(target_logits[:, last_pos, :] / cfg.temperature, dim=-1)
+                bonus = torch.multinomial(p_bonus, num_samples=1)
+                generated = torch.cat([generated, bonus], dim=1)
+
         return generated
+
+    def _adapt_gamma(self):
+        """Adjust gamma based on recent acceptance rate."""
+        cfg = self.config
+        if not self._accepted_history:
+            return
+        window = self._accepted_history[-cfg.adapt_window:]
+        rate = float(np.mean(window))
+        if rate > 0.8 and self._current_gamma < cfg.gamma_max:
+            self._current_gamma = min(self._current_gamma + 1, cfg.gamma_max)
+        elif rate < 0.5 and self._current_gamma > cfg.gamma_min:
+            self._current_gamma = max(self._current_gamma - 1, cfg.gamma_min)
     
+    def _draft_generate_with_probs(
+        self, input_ids: torch.Tensor, num_tokens: int
+    ) -> Tuple[torch.Tensor, List[torch.Tensor]]:
+        """
+        Generate draft tokens and return both tokens and their probability distributions.
+        Returns (draft_tokens [batch, n], draft_probs [n x (batch, vocab)]).
+        """
+        draft_tokens = []
+        draft_probs = []
+        current = input_ids
+        past_key_values = None
+
+        try:
+            outputs = self.draft(current, use_cache=True)
+            logits = _extract_logits(outputs)[:, -1, :]
+            past_key_values = _extract_past_key_values(outputs)
+            if past_key_values is None:
+                raise RuntimeError("Draft model did not return past_key_values")
+
+            for _ in range(num_tokens):
+                probs = F.softmax(logits / self.config.temperature, dim=-1)
+                token = torch.multinomial(probs, num_samples=1)
+                draft_tokens.append(token)
+                draft_probs.append(probs)
+
+                outputs = self.draft(
+                    input_ids=token, use_cache=True, past_key_values=past_key_values
+                )
+                logits = _extract_logits(outputs)[:, -1, :]
+                past_key_values = _extract_past_key_values(outputs)
+
+            if draft_tokens:
+                return torch.cat(draft_tokens, dim=1), draft_probs
+            return current[:, :0], []
+
+        except Exception:
+            # Stateless fallback (slower, no KV cache)
+            draft_tokens, draft_probs = [], []
+            for _ in range(num_tokens):
+                logits = _extract_logits(self.draft(current))[:, -1, :]
+                probs = F.softmax(logits / self.config.temperature, dim=-1)
+                token = torch.multinomial(probs, num_samples=1)
+                draft_tokens.append(token)
+                draft_probs.append(probs)
+                current = torch.cat([current, token], dim=1)
+            if draft_tokens:
+                return torch.cat(draft_tokens, dim=1), draft_probs
+            return current[:, :0], []
+
     def _draft_generate(self, input_ids: torch.Tensor, num_tokens: int) -> torch.Tensor:
         """Generate draft tokens with small model."""
         draft_tokens = []
@@ -338,14 +586,14 @@ class SpeculativeDecoder:
 
         try:
             outputs = self.draft(current, use_cache=True)
-            logits = outputs.logits[:, -1, :]
-            past_key_values = outputs.past_key_values
+            logits = _extract_logits(outputs)[:, -1, :]
+            past_key_values = _extract_past_key_values(outputs)
 
             if past_key_values is None:
                 raise RuntimeError("Draft model did not return past_key_values")
 
             for _ in range(num_tokens):
-                probs = F.softmax(logits / self.temperature, dim=-1)
+                probs = F.softmax(logits / self.config.temperature, dim=-1)
                 token = torch.multinomial(probs, num_samples=1)
                 draft_tokens.append(token)
 
@@ -354,14 +602,14 @@ class SpeculativeDecoder:
                     use_cache=True,
                     past_key_values=past_key_values
                 )
-                logits = outputs.logits[:, -1, :]
-                past_key_values = outputs.past_key_values
+                logits = _extract_logits(outputs)[:, -1, :]
+                past_key_values = _extract_past_key_values(outputs)
 
             return torch.cat(draft_tokens, dim=1) if draft_tokens else current[:, :0]
         except Exception:
             for _ in range(num_tokens):
-                logits = self.draft(current).logits[:, -1, :]
-                probs = F.softmax(logits / self.temperature, dim=-1)
+                logits = _extract_logits(self.draft(current))[:, -1, :]
+                probs = F.softmax(logits / self.config.temperature, dim=-1)
                 token = torch.multinomial(probs, num_samples=1)
                 draft_tokens.append(token)
                 current = torch.cat([current, token], dim=1)
@@ -382,6 +630,12 @@ class BestOfNConfig:
     reward_aggregation: str = "mean"  # mean, max, min
     use_diversity_bonus: bool = True
     diversity_weight: float = 0.1
+    # Multi-objective reranking fields
+    value_weight: float = 0.0           # Blend value model score into ranking
+    length_penalty: float = 0.0        # Penalize verbosity (tokens / max_tokens)
+    repetition_penalty: float = 0.0    # Penalize 3-gram repetition
+    format_checker: Optional[Callable[[str], bool]] = None  # Hard constraint filter
+    batch_score: bool = True            # Batch all candidates through reward model
 
 
 class BestOfNSampler:
@@ -394,11 +648,16 @@ class BestOfNSampler:
         self,
         policy_model: nn.Module,
         reward_model: nn.Module,
-        config: BestOfNConfig = None
+        config: BestOfNConfig = None,
+        tokenizer: Optional[Any] = None,
+        value_model: Optional[nn.Module] = None,
     ):
         self.policy = policy_model
         self.reward = reward_model
+        self.value = value_model
+        self.tokenizer = tokenizer
         self.config = config or BestOfNConfig()
+        self._score_warned_once = False
     
     @torch.no_grad()
     def generate(
@@ -423,7 +682,7 @@ class BestOfNSampler:
             candidates.append(output)
         
         # Score all candidates
-        scores = self._score_candidates(candidates)
+        scores = self._score_candidates(candidates, max_new_tokens=max_new_tokens)
         
         # Add diversity bonus
         if self.config.use_diversity_bonus:
@@ -455,7 +714,7 @@ class BestOfNSampler:
     ) -> str:
         """Generate single candidate."""
         inputs = tokenizer(prompt, return_tensors="pt")
-        inputs = {k: v.to(self.policy.device) for k, v in inputs.items()}
+        inputs = {k: v.to(self._get_policy_device()) for k, v in inputs.items()}
         
         outputs = self.policy.generate(
             **inputs,
@@ -473,12 +732,120 @@ class BestOfNSampler:
         )
         return generated_text
     
-    def _score_candidates(self, candidates: List[str]) -> List[float]:
-        """Score candidates with reward model."""
+    def _get_policy_device(self) -> torch.device:
+        """Resolve policy device robustly across wrapped and raw modules."""
+        device = getattr(self.policy, "device", None)
+        if device is not None:
+            return torch.device(device)
+        try:
+            return next(self.policy.parameters()).device
+        except StopIteration:
+            return torch.device("cpu")
+
+    def _score_one(self, text: str) -> float:
+        """
+        Score a single candidate text with the reward model.
+        Supports: .score(text), .score_text(text), or raw nn.Module forward with tokenizer.
+        """
+        reward = self.reward
+        # Protocol-style duck typing
+        if hasattr(reward, "score"):
+            return float(reward.score(text))
+        if hasattr(reward, "score_text"):
+            return float(reward.score_text(text))
+        # Fallback: tokenize and call forward
+        tok = self.tokenizer
+        if tok is None:
+            if not self._score_warned_once:
+                import logging
+                logging.getLogger("BestOfNSampler").warning(
+                    "No .score()/.score_text() on reward model and no tokenizer provided. "
+                    "All candidates will score 0.0."
+                )
+                self._score_warned_once = True
+            return 0.0
+        device = self._get_policy_device()
+        enc = tok(text, return_tensors="pt", truncation=True, max_length=512)
+        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            out = reward(**enc)
+        return _extract_scalar_output(out)
+
+    def _score_value(self, text: str) -> float:
+        """Score a candidate with the value model (optional)."""
+        if self.value is None:
+            return 0.0
+        if hasattr(self.value, "score"):
+            return float(self.value.score(text))
+        if hasattr(self.value, "score_text"):
+            return float(self.value.score_text(text))
+        tok = self.tokenizer
+        if tok is None:
+            return 0.0
+        device = self._get_policy_device()
+        enc = tok(text, return_tensors="pt", truncation=True, max_length=512)
+        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            out = self.value(**enc)
+        return _extract_scalar_output(out)
+
+    @staticmethod
+    def _ngram_repetition_score(text: str, n: int = 3) -> float:
+        """Fraction of n-grams that are repeated (0 = no repetition, 1 = all repeated)."""
+        tokens = text.split()
+        if len(tokens) < n:
+            return 0.0
+        ngrams = [tuple(tokens[i:i+n]) for i in range(len(tokens) - n + 1)]
+        if not ngrams:
+            return 0.0
+        unique = len(set(ngrams))
+        return 1.0 - unique / len(ngrams)
+
+    def _score_candidates(self, candidates: List[str], max_new_tokens: int = 256) -> List[float]:
+        """
+        Multi-objective scoring: reward + optional value blend,
+        length penalty, repetition penalty, and hard format filter.
+        Supports batched reward scoring when config.batch_score=True and
+        reward has a .score_batch() method.
+        """
+        cfg = self.config
+        n = len(candidates)
+
+        # Hard format filter — remove non-conforming candidates before ranking
+        valid_mask = [True] * n
+        if cfg.format_checker is not None:
+            for i, c in enumerate(candidates):
+                valid_mask[i] = bool(cfg.format_checker(c))
+
+        # Reward scores
+        if cfg.batch_score and hasattr(self.reward, "score_batch"):
+            reward_scores = list(self.reward.score_batch(candidates))
+        else:
+            reward_scores = [self._score_one(c) for c in candidates]
+
         scores = []
-        for candidate in candidates:
-            score = self.reward.score_text(candidate)
-            scores.append(score)
+        for i, candidate in enumerate(candidates):
+            s = reward_scores[i]
+
+            # Value model blend
+            if cfg.value_weight > 0.0:
+                v = self._score_value(candidate)
+                s = (1.0 - cfg.value_weight) * s + cfg.value_weight * v
+
+            # Length penalty
+            if cfg.length_penalty > 0.0:
+                length_ratio = len(candidate.split()) / max(max_new_tokens, 1)
+                s -= cfg.length_penalty * length_ratio
+
+            # Repetition penalty
+            if cfg.repetition_penalty > 0.0:
+                s -= cfg.repetition_penalty * self._ngram_repetition_score(candidate)
+
+            # Hard filter: set invalid to -inf so they never win
+            if not valid_mask[i]:
+                s = float("-inf")
+
+            scores.append(s)
         return scores
     
     def _compute_diversity(self, candidates: List[str]) -> List[float]:
@@ -536,64 +903,93 @@ class BestOfNSampler:
 # MONTE CARLO TREE SEARCH (MCTS)
 # =============================================================================
 
-@dataclass 
+@dataclass
 class MCTSConfig:
     """Configuration for MCTS."""
     n_simulations: int = 100
-    c_puct: float = 2.0  # Exploration constant
+    c_puct: float = 1.25           # AlphaZero-style PUCT base constant
+    puct_c2: float = 19652.0       # PUCT log-factor denominator (MuZero style)
     temperature: float = 1.0
     max_depth: int = 100
-    n_actions: int = 10  # Number of actions to consider per node
+    max_rollout_depth: int = 50    # Cap for rollout steps (separate from tree depth)
+    n_actions: int = 10            # Number of actions to consider per node
     use_value_model: bool = True
+    progressive_widening_alpha: float = 0.5  # max_children ∝ N^alpha
+    depth_discount: float = 0.95   # Value discount per depth level during backprop
+    reward_value_blend: float = 0.5  # Blend terminal reward + value estimate
+    serialize_tree: bool = False   # Dump tree JSON for replay/debug
 
 
 class MCTSNode:
     """Node in the MCTS tree."""
-    
-    def __init__(self, state: str, parent: Optional['MCTSNode'] = None, action: str = ""):
+
+    def __init__(
+        self,
+        state: str,
+        parent: Optional['MCTSNode'] = None,
+        action: str = "",
+        depth: int = 0,
+    ):
         self.state = state
         self.parent = parent
-        self.action = action  # Action taken to reach this node
-        
-        self.children: List[MCTSNode] = []
+        self.action = action
+        self.depth = depth
+
+        self.children: List['MCTSNode'] = []
         self.visits = 0
         self.value_sum = 0.0
-        self.prior = 1.0  # Prior probability from policy
-        
+        self.prior = 1.0       # Prior probability from policy
+        self.reward: Optional[float] = None  # Terminal reward if evaluated
+
         self.is_expanded = False
         self.is_terminal = False
-    
+
     def value(self) -> float:
         """Mean value of this node."""
         if self.visits == 0:
             return 0.0
         return self.value_sum / self.visits
-    
-    def ucb_score(self, c_puct: float) -> float:
-        """UCB score for node selection."""
+
+    def ucb_score(self, c_puct: float, c2: float = 19652.0) -> float:
+        """
+        AlphaZero / MuZero PUCT score.
+        U(s,a) = Q(s,a) + c_puct * P(s,a) * sqrt(N_parent * log((N_parent + c2 + 1)/c2)) / (1 + N(s,a))
+        """
         if self.visits == 0:
             return float('inf')
-        
-        # Q-value (exploitation)
         q_value = self.value()
-        
-        # U-value (exploration)
         if self.parent:
-            u_value = c_puct * self.prior * math.sqrt(self.parent.visits) / (1 + self.visits)
+            n_parent = self.parent.visits
+            log_factor = math.log((n_parent + c2 + 1) / c2)
+            explore_rate = math.sqrt(n_parent * log_factor)
+            u_value = c_puct * self.prior * explore_rate / (1 + self.visits)
         else:
-            u_value = 0
-        
+            u_value = 0.0
         return q_value + u_value
-    
-    def best_child(self, c_puct: float) -> 'MCTSNode':
-        """Select best child by UCB."""
-        return max(self.children, key=lambda c: c.ucb_score(c_puct))
-    
+
+    def best_child(self, c_puct: float, c2: float = 19652.0) -> 'MCTSNode':
+        """Select best child by PUCT score."""
+        return max(self.children, key=lambda c: c.ucb_score(c_puct, c2))
+
     def add_child(self, action: str, state: str) -> 'MCTSNode':
-        """Add child node."""
-        child = MCTSNode(state, parent=self, action=action)
+        """Add child node with incremented depth."""
+        child = MCTSNode(state, parent=self, action=action, depth=self.depth + 1)
         self.children.append(child)
         return child
+
+    def to_dict(self) -> Dict:
+        """Serialize node for tree JSON dump."""
+        return {
+            "state_preview": self.state[-80:],
+            "action": self.action,
+            "depth": self.depth,
+            "visits": self.visits,
+            "value": self.value(),
+            "prior": self.prior,
+            "reward": self.reward,
+            "is_terminal": self.is_terminal,
+            "children": [c.to_dict() for c in self.children],
+        }
 
 
 class MCTSGenerator:
@@ -638,50 +1034,71 @@ class MCTSGenerator:
         for sim in range(self.config.n_simulations):
             # Selection
             node = self._select(root)
-            
-            # Expansion
+
+            # Expansion (progressive widening)
             if not node.is_terminal and (node.visits > 0 or node == root):
                 self._expand(node)
                 if node.children:
                     node = node.children[0]
-            
+
             # Simulation/Evaluation
-            value = self._evaluate(node, max_length, reward_fn)
-            
-            # Backpropagation
+            value = self._evaluate(node, self.config.max_rollout_depth, reward_fn)
+
+            # Backpropagation with depth discount
             self._backpropagate(node, value)
-        
+
         # Select best sequence
         best_sequence = self._get_best_sequence(root)
-        
-        return {
+
+        result = {
             'text': best_sequence,
             'root': root,
             'visit_counts': self._get_visit_distribution(root),
-            'best_child_values': [c.value() for c in root.children]
+            'best_child_values': [c.value() for c in root.children],
         }
+        if self.config.serialize_tree:
+            import json as _json
+            result['tree_json'] = _json.dumps(root.to_dict(), default=str)
+        return result
     
     def _select(self, root: MCTSNode) -> MCTSNode:
-        """Select node to expand using UCB."""
+        """Select node to expand using PUCT."""
         node = root
         while node.children and not node.is_terminal:
-            node = node.best_child(self.config.c_puct)
+            node = node.best_child(self.config.c_puct, self.config.puct_c2)
         return node
-    
+
     def _expand(self, node: MCTSNode):
-        """Expand node by adding children."""
-        # Generate candidate actions (next tokens/chunks)
+        """
+        Expand node with progressive widening.
+        max_children = ceil(visits ^ progressive_widening_alpha)
+        """
+        alpha = self.config.progressive_widening_alpha
+        max_children = max(1, math.ceil((node.visits + 1) ** alpha))
+
+        # Don't re-expand beyond current widening budget
+        if len(node.children) >= max_children and node.is_expanded:
+            return
+
+        n_to_generate = max_children - len(node.children)
+        if n_to_generate <= 0:
+            node.is_expanded = True
+            return
+
+        # Total actions to sample; pick from top-n_actions, add n_to_generate
         actions = self._generate_actions(node.state, self.config.n_actions)
-        
-        for action, prob in actions:
+
+        # Skip actions already expanded (by action string)
+        existing_actions = {c.action for c in node.children}
+        new_actions = [(a, p) for a, p in actions if a not in existing_actions]
+
+        for action, prob in new_actions[:n_to_generate]:
             new_state = node.state + action
             child = node.add_child(action, new_state)
             child.prior = prob
-            
-            # Check if terminal
             if self._is_terminal(new_state):
                 child.is_terminal = True
-        
+
         node.is_expanded = True
     
     def _generate_actions(self, state: str, n: int) -> List[Tuple[str, float]]:
@@ -691,7 +1108,7 @@ class MCTSGenerator:
         inputs = {k: v.to(device) for k, v in inputs.items()}
         
         outputs = self.policy(**inputs)
-        logits = outputs.logits[0, -1, :]
+        logits = _extract_logits(outputs)[0, -1, :]
         
         # Sample top-k actions
         probs = F.softmax(logits / self.config.temperature, dim=-1)
@@ -704,22 +1121,61 @@ class MCTSGenerator:
         
         return actions
     
+    def _value_score(self, text: str) -> float:
+        """
+        Score text with value model using duck-typing + fallback tokenizer path.
+        Never calls the missing .score_text() directly.
+        """
+        vm = self.value
+        if vm is None:
+            return 0.0
+        # Protocol: .score(text) or .score_text(text)
+        if hasattr(vm, "score"):
+            return float(vm.score(text))
+        if hasattr(vm, "score_text"):
+            return float(vm.score_text(text))
+        # Fallback: tokenize + forward
+        tok = self.tokenizer
+        if tok is None:
+            return 0.0
+        device = self._get_policy_device()
+        enc = tok(text, return_tensors="pt", truncation=True, max_length=512)
+        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            out = vm(**enc)
+        return _extract_scalar_output(out)
+
     def _evaluate(
         self,
         node: MCTSNode,
         max_length: int,
-        reward_fn: Optional[Callable]
+        reward_fn: Optional[Callable],
     ) -> float:
-        """Evaluate node with value model or rollout."""
-        # Terminal state: use reward function
-        if node.is_terminal and reward_fn:
-            return reward_fn(node.state)
-        
-        # Use value model if available
-        if self.value and self.config.use_value_model:
-            return self.value.score_text(node.state)
-        
-        # Otherwise: rollout with policy
+        """
+        Evaluate node with value model and/or rollout.
+        Blends terminal reward and value estimate per reward_value_blend.
+        """
+        cfg = self.config
+
+        # Terminal: use reward function
+        if node.is_terminal and reward_fn is not None:
+            r = float(reward_fn(node.state))
+            node.reward = r
+            if self.value and cfg.use_value_model:
+                v = self._value_score(node.state)
+                return cfg.reward_value_blend * r + (1 - cfg.reward_value_blend) * v
+            return r
+
+        # Non-terminal with value model: blend value + optional rollout reward
+        if self.value and cfg.use_value_model:
+            v = self._value_score(node.state)
+            if reward_fn is not None:
+                # Roll out and blend
+                rollout_r = self._rollout(node.state, max_length, reward_fn)
+                return cfg.reward_value_blend * rollout_r + (1 - cfg.reward_value_blend) * v
+            return v
+
+        # Pure rollout fallback
         return self._rollout(node.state, max_length, reward_fn)
     
     def _rollout(
@@ -743,11 +1199,11 @@ class MCTSGenerator:
 
         try:
             outputs = self.policy(**inputs, use_cache=True)
-            past_key_values = outputs.past_key_values
+            past_key_values = _extract_past_key_values(outputs)
             if past_key_values is None:
                 raise RuntimeError("Policy model did not return past_key_values")
 
-            logits = outputs.logits[:, -1, :]
+            logits = _extract_logits(outputs)[:, -1, :]
             generated_tokens = []
 
             for _ in range(max_new_tokens):
@@ -763,8 +1219,8 @@ class MCTSGenerator:
                     use_cache=True,
                     past_key_values=past_key_values
                 )
-                logits = outputs.logits[:, -1, :]
-                past_key_values = outputs.past_key_values
+                logits = _extract_logits(outputs)[:, -1, :]
+                past_key_values = _extract_past_key_values(outputs)
 
             if generated_tokens:
                 new_tokens = torch.cat(generated_tokens, dim=1)
@@ -798,10 +1254,17 @@ class MCTSGenerator:
             return torch.device("cpu")
     
     def _backpropagate(self, node: MCTSNode, value: float):
-        """Backpropagate value up the tree."""
+        """
+        Backpropagate value up the tree with depth-based discounting.
+        value at depth d is discounted by depth_discount^(d - root_depth) at each ancestor.
+        """
+        discount = self.config.depth_discount
+        current_depth = node.depth
         while node is not None:
             node.visits += 1
-            node.value_sum += value
+            # Discount value relative to the evaluated node's depth
+            discounted = value * (discount ** (current_depth - node.depth))
+            node.value_sum += discounted
             node = node.parent
     
     def _is_terminal(self, state: str) -> bool:
