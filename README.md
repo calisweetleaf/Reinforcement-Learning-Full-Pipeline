@@ -19,9 +19,18 @@
 <br/>
 
 [**Quick Start**](#quick-start) • [**Methods**](#rlhf-methods) • [**Features**](#features) • [**Architecture**](#architecture) • [**Benchmarks**](#method-comparison) • [**Validated Run**](#validated-training-run) • [**GGUF Releases**](#gguf-releases)
+[qwen3-pinion](https://huggingface.co/Somnus-Sovereign-Systems/qwen3-pinion)
 
 <br/>
 </div>
+
+---
+# March 3, 2026 Updates:
+
+- Qwen3 1.7B using rlhf.py, full SFT on the MaggiePie 300k filtered dataset, full open weights are now public
+ https://huggingface.co/Somnus-Sovereign-Systems/qwen3-pinion
+
+the gguf formats f16, Q4_K_M, Q5_K_M, and q8_0 are being released asap to huggingface and then ollama. This README will be updated again with final links. This qwen3 sft with merged LoRA preludes the DPO revision using a distill-the-flow DPO dataset. Qwen3-Pinion serves to demonstrate the benefits of my systems, bring actual runnable systems that dont require setup or integration. Aeron is still the flagship upcoming release of the toolkit, but the qwen releases serve as useable artifacts today. 
 
 ---
 
