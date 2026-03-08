@@ -367,8 +367,15 @@ If you use any methods, code, orrepository in your research, please cite it aswe
 ```bibtex
 @misc{https://doi.org/10.5281/zenodo.18607464, doi = {10.5281/ZENODO.18607464}, url = {https://zenodo.org/doi/10.5281/zenodo.18607464}, author = {Rowell, Christian Trey Levi}, keywords = {RLHF, DPO, PPO, Reinforcement Learning}, title = {Reinforcement Learning Multi Method Pipeline and Inference tooling}, publisher = {Zenodo}, year = {2026}, copyright = {Sovereign Anti-Exploitation Software License }}
 ```
+---
 
---
+## **New Community Channel:**
+
+- For the time being until spare time for webites to go up and the beginning of moving from a solo gatekeeper, to an open ecosystem ready to collaborate with like minded developers, answe any questions anyone has of any form, other general discussion, or collaboration. Now that Proper time has established and we reach output artifacts of systems not the systems themselves, all licenses for the outputs become immedietely fully do anything open-source, but the code, the repo, the original docs, the pipeline, etc, that remains under the Anti-Exploitation License. The Somnus website will be similar in the intended purpose/effect of industry leaders. Releasing internal research. Testing benchmarks, product explanations, discussions, etc. I look forward to the potential future that this becomes more than a solo mission!!
+
+- [discord-server](https://discord.gg/6hWH76Bs)
+
+---
 
 ## References
 
