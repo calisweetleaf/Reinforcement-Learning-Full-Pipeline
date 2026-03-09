@@ -6,9 +6,9 @@ authors:
     orcid: "https://orcid.org/0009-0008-6550-6316"
 title: "Reinfocement Learning Multi Method Pipeline and Runtime Optimizing SOTA tools."
 type: software
-version: "1.0.0"
+version: "2.5.0"
 date-released: "2026-01-31"
 repository-code: "https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline"
-license-url: "https://github.com/calisweetleaf/NGSST/blob/main/LICENSE"
+license-url: "https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline/blob/main/LICENSE"
 keywords:
   - RLHF
