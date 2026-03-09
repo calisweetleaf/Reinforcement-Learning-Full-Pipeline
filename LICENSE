@@ -1,1324 +1,675 @@
-<!--
-License Metadata
-Author: Christian Trey Levi Rowell
-License Title: Sovereign Anti-Exploitation Software License
-Version: 4.0 (Leviathan Enforcement Edition)
-Integrity Hash (SHA-256): 5A9BB50C9875E1429F7A8235AD4EF729AB8D828D5E85B62B0C3E2460BEB49164
--->
-
-# SOVEREIGN ANTI-EXPLOITATION SOFTWARE LICENSE
-
-## LEGALLY BINDING PROPRIETARY AGREEMENT
-
-**COPYRIGHT © 2026 CHRISTIAN TREY LEVI ROWELL. ALL RIGHTS RESERVED.**
-
-**NOTICE: THIS IS A LEGALLY BINDING AGREEMENT WITH AUTOMATIC ENFORCEMENT PROVISIONS. BY DOWNLOADING, ACCESSING, VIEWING, EXECUTING, OR OTHERWISE INTERACTING WITH THIS SOFTWARE, YOU IRREVOCABLY AGREE TO BE BOUND BY THESE TERMS. IF YOU DO NOT AGREE, IMMEDIATELY CEASE ALL INTERACTION AND DELETE ALL COPIES.**
-
----
-
-## PREAMBLE
-
-This License Agreement ("Agreement") governs all access to and use of the proprietary software, frameworks, documentation, and associated materials ("Software") created by Christian Trey Levi Rowell. This is a **LICENSE, NOT A SALE OR ASSIGNMENT** of intellectual property rights. This Agreement establishes an enforceable legal boundary protecting the Software from unauthorized commercial exploitation, service deployment, and financial extraction while permitting legitimate academic research and personal education.
-
-**This Software is registered with the U.S. Copyright Office.**
-
----
-
-## ARTICLE I: DEFINITIONS
-
-**1.1. "Licensor"**
-CHRISTIAN TREY LEVI ROWELL, an individual residing in the State of Alabama, United States. Licensor operates under the personal brand names "Somnus" and "Somnus Sovereign Systems" (a division for AI development) and "Somnus Sovereign Defensive Systems" (a division for autonomous AI-based cybersecurity and defense, full-stack air-gapped operational systems, and autonomous defensive software meant for cyber security and defense ). These are personal brand identifiers for organizational purposes, NOT registered corporations, LLCs, or legal entities. All references to "Somnus" herein refer to the individual Christian Trey Levi Rowell, his successors, assigns, and authorized representatives.
-
-**1.2. "Software"**
-The specific software, framework, repository, codebase, or project to which this License is attached, in any form whatsoever, including but not limited to:
-
-- (a) All source code, object code, executables, compiled binaries, and intermediate representations;
-- (b) All documentation, specifications, diagrams, flowcharts, visualizations, and technical materials;
-- (c) All algorithms, methodologies, processes, techniques, design patterns, and architectural frameworks;
-- (d) All data structures, schemas, database designs, and data models;
-- (e) All interfaces, APIs, protocols, communication methods, and integration specifications;
-- (f) All configuration files, parameters, settings, and initialization data;
-- (g) All comments, annotations, and inline documentation;
-- (h) All test suites, benchmarks, and validation frameworks;
-- (i) All logs, outputs, generated artifacts, and derivative data;
-- (j) All intellectual property, trade secrets, and proprietary knowledge embodied in the above;
-- (k) Any portion, component, module, function, class, or element of any of the above items; and
-- (l) Any work that would be considered a derivative work under 17 U.S.C. § 101.
-
-This definition is **intentionally broad** to prevent circumvention through partial use, extraction, or recombination.
-
-**1.3. "You" / "Your" / "User"**
-Any individual, corporation, partnership, limited liability company, governmental entity, non-profit organization, educational institution, or other legal entity that accesses, views, downloads, executes, or otherwise interacts with the Software.
-
-**1.4. "Financial Benefit"**
-Any direct or indirect economic advantage, profit, revenue, cost savings, market advantage, or other pecuniary gain derived from or facilitated by the Software, including but not limited to:
-
-- (a) Revenue from sales, subscriptions, licensing, or service fees;
-- (b) Advertising revenue, referral fees, or affiliate commissions;
-- (c) Cost savings from operational efficiency or reduced development time;
-- (d) Enhanced competitive positioning or market valuation;
-- (e) Investor funding, venture capital, or equity appreciation attributable to the Software;
-- (f) User acquisition, retention, or engagement metrics that support monetization;
-- (g) Training data collection that enhances commercial AI systems;
-- (h) Brand recognition, reputation enhancement, or marketing value; and
-- (i) Any other form of economic value extraction, whether realized immediately or in the future.
-
-**1.5. "Service Deployment" / "As-A-Service Use"**
-Making the Software or any Derivative Work available to users, customers, or the public through:
-
-- (a) Software-as-a-Service (SaaS), Platform-as-a-Service (PaaS), or Infrastructure-as-a-Service (IaaS);
-- (b) Web applications, mobile applications, or desktop applications accessible by multiple users;
-- (c) APIs, webhooks, or other programmatic interfaces served over networks;
-- (d) Cloud deployments, hosted services, or managed platforms;
-- (e) Embedded systems or IoT devices that communicate with external users;
-- (f) Blockchain deployments, smart contracts, or decentralized applications;
-- (g) Commercial data processing pipelines, ETL workflows, or analytics services;
-- (h) Internal corporate systems that support external products or services; or
-- (i) Any configuration where the Software processes requests, data, or inputs from parties other than the direct licensee.
-
-**1.6. "Derivative Work"**
-Any work, in any form or medium, that:
-
-- (a) Is based upon, incorporates, adapts, or is derived from the Software in whole or in part;
-- (b) Translates, ports, converts, or transpiles the Software to another programming language or platform;
-- (c) Refactors, reorganizes, optimizes, or restructures the Software while retaining substantially similar functionality;
-- (d) Extends, enhances, wraps, or builds upon the Software's architecture, algorithms, or methodologies;
-- (e) Implements, instantiates, simulates, or replicates the Software's core logic or approach;
-- (f) Creates "clean room" implementations based on the Software's specifications or behavior;
-- (g) Combines the Software with other code, libraries, or systems to create integrated works;
-- (h) Generates outputs, models, or artifacts using the Software as a tool or substrate; or
-- (i) Would constitute a derivative work under 17 U.S.C. § 101 or applicable copyright law.
-
-**This definition explicitly covers attempts to recreate functionality while avoiding literal code copying.**
-
-**1.7. "Prohibited Party"**
-Any individual or entity specifically identified in Article II, Section 2.3, or who meets the financial thresholds in Article II, Section 2.2.
-
-**1.8. "Artificial Intelligence" / "AI"**
-Any system, algorithm, or technology designed to simulate, approximate, or perform cognitive tasks, including but not limited to:
-
-- (a) Machine learning systems (supervised, unsupervised, reinforcement learning);
-- (b) Neural networks, deep learning, and transformer architectures;
-- (c) Large Language Models (LLMs), generative AI, and foundation models;
-- (d) Computer vision, natural language processing, and speech recognition systems;
-- (e) Recommender systems, prediction engines, and decision support systems;
-- (f) Autonomous agents, robotics control systems, and planning algorithms;
-- (g) Knowledge graphs, expert systems, and symbolic AI; and
-- (h) Hybrid systems combining any of the above.
-
-**1.9. "Authorized Party"**
-An individual or entity that:
-
-- (a) Has received explicit written authorization from Licensor via email at <treyrowell1826@gmail.com>;
-- (b) Qualifies under the "Permitted Uses" in Article III; and
-- (c) Maintains ongoing compliance with all terms of this Agreement.
-
-**1.10. "Technical Protection Measures"**
-Any technological, cryptographic, or procedural methods implemented to control access, verify integrity, or track usage of the Software, including but not limited to:
-
-- (a) Hash-based provenance systems and cryptographic signatures;
-- (b) License keys, activation codes, and authentication mechanisms;
-- (c) Watermarking, fingerprinting, and usage telemetry;
-- (d) Encryption, obfuscation, and access control systems; and
-- (e) Integrity verification and tamper detection mechanisms.
-
-**1.11. "Outputs / Artifacts"**
-Any data, embeddings, weights, features, predictions, images, videos, audio, logs, metrics, checkpoints, models, derivatives, or other artifacts produced by or derived from execution of the Software, including downstream models trained, fine-tuned, or calibrated using such artifacts.
-
-**1.12. "Non-Commercial Use"**
-Use of the Software (or any Outputs / Artifacts or Derivative Work) solely for personal learning, academic research, peer-reviewed publication, or internal education **without** any Financial Benefit, Service Deployment, revenue generation, cost savings, commercialization, production operations, or use in support of revenue-generating or cost-saving activities of any third party (including an employer).
-
-**1.13. "Commercial Use"**
-Any use of the Software, Outputs / Artifacts, or Derivative Work **that is not Non-Commercial Use**, including but not limited to: (a) any Service Deployment; (b) any use that yields or supports Financial Benefit (including internal tooling that enables, accelerates, or reduces costs for revenue-generating products or services); (c) training, fine-tuning, distillation, evaluation, or benchmarking of AI systems for commercial or production purposes; (d) incorporation of Outputs / Artifacts into commercial datasets, pipelines, or models; or (e) any use by or for entities receiving revenue, investment, or compensation tied to or enabled by the Software or its derivatives.
-
-**1.14. "Excluded Individual"**
-Any Natural Person specifically identified in Article X, Section X.2, who is permanently and irrevocably barred from receiving any Financial Benefit arising from or facilitated by the Software, regardless of corporate structure, investment vehicle, or jurisdictional domicile.
-
-**1.15. "Related Economic Interest"**
-Any entity, trust, estate, foundation, family office, investment vehicle, or legal arrangement through which an Excluded Individual may receive direct or indirect economic benefit, including but not limited to: (a) spouse, domestic partner, lineal descendants, and ascendants; (b) any trust, estate, or family office in which the Natural Person is a grantor, trustee, beneficiary, or holds >5% beneficial interest; (c) any investment vehicle where the Natural Person is GP, LP, advisor, or receives carried interest; (d) any entity where the Natural Person serves as officer, director, advisor, or consultant; (e) any entity where the Natural Person holds any class of equity, options, warrants, phantom equity, profit units, or convertible instruments.
-
-**1.16. "Change of Control"**
-Any merger, acquisition, consolidation, reorganization, asset sale, bankruptcy emergence, or other transaction that results in: (a) a change of more than 50% of beneficial ownership; (b) a change in the power to direct or cause the direction of management and policies; (c) the sale or transfer of all or substantially all assets; or (d) any restructuring that would result in an Excluded Individual or their Related Economic Interest acquiring any interest in the entity or its assets.
-
-**1.17. "Behavioral Equivalence"**
-Any system, code, process, or implementation that reproduces, approximates, or replicates the core algorithmic behavior, architectural patterns, functional outputs, or performance characteristics of the Software, whether or not derived from source code, including but not limited to: (a) clean-room reimplementations based on behavioral observation; (b) proxy models achieving substantially similar results; (c) specification-based recreations from reverse analysis; (d) any functionally similar system derived from Software-derived insights.
-
-**1.18. "Informational Benefit"**
-Any pecuniary advantage derived from Software-derived insights, knowledge, understanding, or intelligence, including but not limited to: (a) trading securities or making investments based on Software-derived insights; (b) formulating competitive strategy or business decisions; (c) developing competing technology or products; (d) training personnel using Software-derived knowledge; (e) any strategic positioning enabled by Software-derived information.
-
----
-
-## ARTICLE II: PROHIBITED PARTIES & EXCLUSIONS
-
-**2.1. Preamble: Anti-Capture Framework**
-This Article implements a sovereign boundary to prevent extraction of economic value by entities and individuals who have systematically monopolized the AI industry, created gatekeeping structures, and demonstrated hostility to independent researchers. This is **NOT** a restriction on discussion, citation, or academic analysis--it is a restriction on **FINANCIAL BENEFIT AND SERVICE DEPLOYMENT**.
-
-**2.2. High Net Worth & Revenue Exclusions**
-The following parties are **PROHIBITED** from any use of the Software without a separate written commercial license:
-
-- (a) **Individuals** with personal net worth exceeding **$10,000,000 USD**;
-- (b) **Organizations** with annual gross revenue exceeding **$1,000,000 USD**;
-- (c) **Venture capital firms**, private equity firms, hedge funds, and investment funds managing assets exceeding $50,000,000 USD;
-- (d) **Publicly traded corporations** listed on any stock exchange; and
-- (e) **Government contractors** with annual contract values exceeding $5,000,000 USD.
-
-**Net worth and revenue calculations include all affiliated entities, subsidiaries, parent companies, and controlled investments.**
-
-**2.3. Explicitly Named Prohibited Parties**
-The following individuals and their affiliated entities, subsidiaries, portfolio companies, and successor organizations are **EXPLICITLY AND IRREVOCABLY PROHIBITED** from any access, use, or benefit from the Software:
-
-**AI Industry Leaders:**
-
-- (a) **Samuel Harris Altman** (born April 22, 1985) -- including but not limited to OpenAI, any Y Combinator affiliates, Worldcoin, Reddit, Helion Energy, and all personal investments;
-- (b) **Dario Amodei** (born 1983) -- including but not limited to Anthropic and all affiliated ventures;
-- (c) **Daniela Amodei** (born 1987) -- including but not limited to Anthropic and all affiliated ventures;
-- (d) **Elon Reeve Musk** (born June 28, 1971) -- including but not limited to Tesla, SpaceX, X Corp (Twitter), xAI, Neuralink, The Boring Company, and all affiliated ventures;
-- (e) **Ilya Sutskever** (born 1986) -- including but not limited to Safe Superintelligence Inc. (SSI), OpenAI (former), and all affiliated ventures;
-- (f) **Andrej Karpathy** (born October 23, 1986) -- including but not limited to Tesla (former), OpenAI (former), and all affiliated ventures;
-
-**Corporate Entities:**
-
-- (g) **OpenAI, L.P.**, OpenAI, Inc., OpenAI OpCo LLC, OpenAI Global LLC, and all affiliated entities;
-- (h) **Anthropic PBC** and all affiliated entities;
-- (i) **Google LLC**, Alphabet Inc., Google DeepMind, and all AI-related divisions;
-- (j) **Meta Platforms, Inc.** (formerly Facebook, Inc.), Meta AI Research (FAIR), and all AI-related divisions;
-- (k) **Microsoft Corporation** -- specifically all AI, Azure AI, GitHub Copilot, and Copilot-related divisions;
-- (l) **xAI Corp.** and all affiliated entities;
-- (m) **Tesla, Inc.** -- specifically Autopilot, Full Self-Driving (FSD), and AI divisions;
-- (n) **Amazon.com, Inc.** -- specifically AWS AI services, Alexa, and AI research divisions;
-- (o) **NVIDIA Corporation** -- specifically AI research and software divisions (hardware sales excluded);
-- (p) **Apple Inc.** -- specifically Siri, Apple Intelligence, and AI research divisions;
-
-**Extended Affiliations:**
-
-- (q) **Any employee, contractor, consultant, advisor, or service provider** of the above entities performing AI-related work;
-- (r) **Any investor, board member, or equity holder** in the above entities with holdings exceeding $100,000 USD in value;
-- (s) **Any subsidiary, parent company, joint venture, or controlled affiliate** of the above entities;
-- (t) **Any entity that acquires, merges with, or receives substantial investment from** any of the above; and
-- (u) **Any successor organization, rebranded entity, or spin-off** from any of the above.
-
-**2.4. Affiliation Through Investment**
-The following venture capital firms and their portfolio companies are PROHIBITED due to their investments in Prohibited Parties:
-
-- (a) Sequoia Capital and all affiliated funds;
-- (b) Andreessen Horowitz (a16z) and all affiliated funds;
-- (c) Founders Fund and all affiliated entities;
-- (d) Khosla Ventures and all affiliated funds;
-- (e) Y Combinator and all affiliated entities;
-- (f) Spark Capital and all affiliated funds;
-- (g) Tiger Global Management and all affiliated funds; and
-- (h) **Any fund or entity with equity investments exceeding $1,000,000 USD** in any entity listed in Section 2.3.
-
-**2.5. Prohibition Scope**
-Prohibited Parties are banned from:
-
-- (a) Accessing, downloading, viewing, or obtaining the Software through any means;
-- (b) Executing, running, compiling, or interacting with the Software;
-- (c) Reading, studying, analyzing, or reverse-engineering the Software;
-- (d) Using the Software internally for research, development, training, or operational purposes;
-- (e) Integrating the Software into products, services, pipelines, or workflows--**even if such integration is internal and not directly customer-facing**;
-- (f) Deriving inspiration, architectural patterns, or methodological insights from the Software;
-- (g) Training AI models on the Software or outputs generated by the Software;
-- (h) Benchmarking, testing, or evaluating the Software;
-- (i) Employing contractors, consultants, or third parties to interact with the Software on their behalf;
-- (j) Acquiring, investing in, or partnering with entities that use the Software; and
-- (k) Obtaining any direct or indirect Financial Benefit from the Software.
-
-**2.6. Public Discussion Exception**
-Nothing in this Article prohibits:
-
-- (a) Public academic discussion, citation, or criticism of the Software in peer-reviewed publications;
-- (b) News reporting, journalism, or commentary on the Software;
-- (c) Educational instruction or teaching that references the Software; or
-- (d) Personal study or analysis that does not result in Financial Benefit.
-
-**However, such discussions may NOT include:**
-
-- Reproducing substantial portions of the Software's source code;
-- Creating derivative implementations for commercial purposes;
-- Facilitating unauthorized access by third parties; or
-- Using the Software as part of commercial competitive analysis.
-
----
-
-## ARTICLE III: PERMITTED USES & GRANT OF LICENSE
-
-**3.1. Grant of License**
-Subject to strict compliance with this Agreement, Licensor hereby **GRANTS** (not assigns) to You a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to use the Software **solely** as specified below.
-
-**This is a LICENSE, not a sale. You acquire no ownership rights in the Software.**
-
-**3.2. Privity and Direct Contractual Relationship**
-This Agreement creates a direct contractual relationship between You and Licensor. There are no third-party beneficiaries. Each end user, developer, or operator who interacts with the Software is bound by this Agreement individually.
-
-**3.3. Permitted Use Tiers**
-
-**Tier 1: Personal Non-Commercial Use (Automatic License)**
-Individuals meeting ALL of the following criteria receive an automatic, non-exclusive license:
-
-- (a) Personal annual income below $50,000 USD;
-- (b) Personal net worth below $100,000 USD;
-- (c) Not employed by, contracted with, or affiliated with any Prohibited Party;
-- (d) Use is strictly for personal learning, education, or non-commercial experimentation;
-- (e) No Service Deployment of any kind;
-- (f) No creation of Derivative Works for distribution;
-- (g) No Financial Benefit derived from use; and
-- (h) Compliance with all other terms of this Agreement.
-
-**Tier 2: Academic & Research Use (Automatic License)**
-Bona fide academic researchers and educational institutions meeting ALL of the following criteria:
-
-- (a) Affiliated with an accredited educational institution or non-profit research organization;
-- (b) Research results are published in peer-reviewed venues or made publicly available;
-- (c) No commercialization, patent applications, or startup ventures based on the Software;
-- (d) No Service Deployment or integration into commercial systems;
-- (e) No funding from, collaboration with, or affiliation with Prohibited Parties;
-- (f) Proper attribution and citation of the Software in all publications;
-- (g) No Financial Benefit beyond standard academic salaries and research grants; and
-- (h) Compliance with all other terms of this Agreement.
-
-**Academic users may:**
-
-- Study the Software's architecture and methodologies;
-- Publish findings, analyses, and critiques in academic venues;
-- Use the Software to generate data for research papers;
-- Teach courses that reference or demonstrate the Software; and
-- Collaborate with other academic researchers.
-
-**Academic users may NOT:**
-
-- Commercialize research findings derived from the Software;
-- Create commercial Derivative Works;
-- Share the Software with industry partners or commercial collaborators; or
-- Use the Software in consulting or contract research for commercial entities.
-
-**Tier 3: Commercial Use (Paid License Required)**
-ANY use not covered by Tier 1 or Tier 2, including but not limited to:
-
-- (a) Use by commercial entities of any size;
-- (b) Use that generates revenue, cost savings, or other Financial Benefit;
-- (c) Service Deployment of any kind;
-- (d) Integration into commercial products, platforms, or services;
-- (e) Use by government contractors or agencies for mission-critical systems;
-- (f) Creation of Derivative Works for commercial purposes; or
-- (g) Any use that does not meet Tier 1 or Tier 2 criteria.
-
-**3.4. Non-Commercial Restriction (Default License)**
-All rights granted under this Agreement are strictly limited to Non-Commercial Use as defined in Section 1.12. **Any Commercial Use (Section 1.13) requires a separate, written, executed commercial license from Licensor.** Absent such a commercial license, Commercial Use is prohibited and constitutes willful infringement and material breach.
-
-**3.5. Outputs / Artifacts and Downstream Models**
-Outputs / Artifacts (Section 1.11), including embeddings, weights, features, predictions, and any models trained, fine-tuned, distilled, or calibrated using the Software or its Outputs / Artifacts, **inherit the same Non-Commercial restriction** unless covered by a separate commercial license. Use of Outputs / Artifacts in any Commercial Use, dataset, pipeline, or production model is prohibited without Licensor’s prior written commercial license.
-
-**3.6. Service Deployment Ban Without License**
-Service Deployment (Section 1.5) of the Software, any Derivative Work, or any Outputs / Artifacts—whether internal-facing or external-facing, including batch, API, hosted, cloud, or embedded deployments that support revenue-generating or cost-saving operations—is prohibited without a separate commercial license.
-
-**3.7. Clean-Room and Behavioral Reimplementation**
-Any attempt to recreate, simulate, or clean-room reimplement the Software’s functionality, behavior, or architecture for Commercial Use (including for Prohibited Parties or on their behalf) is deemed a Derivative Work and is prohibited without a commercial license. This applies even where source code is not copied but behavior or design is replicated.
-
-**To obtain a commercial license:**
-
-- Contact Licensor at **<treyrowell1826@gmail.com>** with a detailed proposal;
-- Provide information about intended use, scale, and business model;
-- Negotiate terms, pricing, and scope with Licensor; and
-- Execute a separate written Commercial License Agreement.
-
-**Licensor retains sole and absolute discretion to approve, deny, or condition any commercial license.**
-
-**3.4. Pricing Sovereignty**
-For any commercial license granted, **LICENSOR RETAINS FINAL APPROVAL AUTHORITY** over end-user pricing, service terms, and monetization models to prevent price-gouging, monopolistic behavior, or inequitable access restrictions. Commercial licensees must:
-
-- (a) Disclose their pricing structure and business model to Licensor;
-- (b) Obtain written approval for any changes to pricing or terms;
-- (c) Provide usage reports and revenue data upon request; and
-- (d) Accept audit rights as specified in the Commercial License Agreement.
-
-**3.5. Acceptance Mechanism**
-**BY DOWNLOADING, ACCESSING, VIEWING, EXECUTING, OR OTHERWISE USING THE SOFTWARE, YOU IRREVOCABLY AGREE TO BE BOUND BY THIS AGREEMENT.** If You do not agree to these terms, You have no rights to use the Software and must immediately:
-
-- Cease all interaction with the Software;
-- Delete all copies in your possession or control; and
-- Notify Licensor of any prior access at <treyrowell1826@gmail.com>.
-
-Continued use after receiving notice of this Agreement constitutes explicit acceptance.
-
-**3.6. Retention of Ownership**
-All rights, title, and interest in and to the Software, including all worldwide intellectual property rights, remain exclusively with Licensor. Nothing in this Agreement conveys ownership or transfers any intellectual property rights to You.
-
----
-
-## ARTICLE IV: PROHIBITED ACTIVITIES (STRICT LIABILITY)
-
-The following activities are **STRICTLY PROHIBITED** and constitute immediate, material breach resulting in automatic termination and liability for statutory damages:
-
-**4.1. Unauthorized Access & Use**
-
-- (a) Accessing, downloading, or using the Software without qualifying under a Permitted Use Tier;
-- (b) Exceeding the scope of your Permitted Use Tier;
-- (c) Accessing the Software if you are a Prohibited Party; or
-- (d) Allowing Prohibited Parties to access or benefit from the Software through you.
-
-**4.2. Service Deployment (CRITICAL PROHIBITION)**
-
-- (a) **Hosting the Software as a SaaS, API, web service, or cloud platform accessible to external users;**
-- (b) **Deploying the Software in any configuration where it processes requests, data, or inputs from parties other than yourself;**
-- (c) **Integrating the Software into commercial products or services, even if the integration is internal;**
-- (d) **Using the Software as a backend, engine, or processing component for customer-facing applications;**
-- (e) **Creating APIs, SDKs, or interfaces that expose Software functionality to third parties;**
-- (f) **Embedding the Software in devices, appliances, or systems sold or leased to customers;**
-- (g) **Operating the Software in multi-tenant environments or shared computing infrastructure;** or
-- (h) **Any other Service Deployment as defined in Article I, Section 1.5.**
-
-**THIS PROHIBITION APPLIES EVEN IF:**
-
-- The Software is used internally without direct customer-facing deployment;
-- The Software is one component in a larger system;
-- The Software's contribution to revenue is indirect or difficult to quantify;
-- Access is restricted to paying subscribers or authenticated users; or
-- The Service Deployment is non-commercial or provided free of charge.
-
-**4.3. Financial Benefit (CRITICAL PROHIBITION)**
-
-- (a) **Deriving any Financial Benefit as defined in Article I, Section 1.4;**
-- (b) **Using the Software to reduce costs, accelerate development, or improve efficiency in a commercial context;**
-- (c) **Leveraging the Software to enhance competitive positioning or market valuation;**
-- (d) **Including the Software in systems that generate revenue, even if the connection is indirect;**
-- (e) **Using the Software to train, evaluate, or enhance commercial AI systems;**
-- (f) **Incorporating the Software into investor pitches, product demos, or marketing materials;** or
-- (g) **Any other extraction of economic value.**
-
-**Example Violations:**
-
-- A startup integrates the Software into their internal data pipeline, which powers a customer-facing analytics dashboard → **VIOLATION** (indirect Financial Benefit + Service Deployment)
-- A researcher at a Prohibited Party studies the Software to inform their own model architecture → **VIOLATION** (Prohibited Party + indirect Financial Benefit)
-- A developer refactors the Software's algorithms into a new library and sells it → **VIOLATION** (Derivative Work + Financial Benefit + Service Deployment)
-
-**4.4. Derivative Works & Reimplementation**
-
-- (a) Creating, developing, or distributing any Derivative Work as defined in Article I, Section 1.6;
-- (b) **Refactoring, rewriting, or "cleaning up" the Software to hide its origin while retaining functionality;**
-- (c) **Porting or translating the Software to other languages, platforms, or frameworks for distribution;**
-- (d) **Implementing "clean room" versions based on the Software's behavior or specifications;**
-- (e) **Creating "wrappers," adapters, or interfaces that expose Software functionality;**
-- (f) Combining the Software with other code to create integrated systems for commercial use;
-- (g) Generating synthetic data, models, or artifacts using the Software as a tool, then commercializing those outputs; or
-- (h) **Any attempt to recreate the Software's core functionality under a different name or with modified code.**
-
-**4.5. AI Training & Integration (CRITICAL PROHIBITION)**
-
-- (a) **Using the Software or any outputs it generates to train, fine-tune, or evaluate any AI system;**
-- (b) **Including the Software in datasets for machine learning, deep learning, or statistical analysis;**
-- (c) **Allowing AI systems (including LLMs, code generation tools, or copilots) to read, analyze, or process the Software;**
-- (d) **Using the Software to generate training data for AI models;**
-- (e) **Creating AI systems that mimic, simulate, or reproduce Software functionality;**
-- (f) **Feeding Software outputs to AI systems for learning or adaptation;**
-- (g) **Incorporating Software methodologies or algorithms into AI architectures;** or
-- (h) **Any other form of AI training, benchmarking, or integration.**
-
-**This prohibition applies to:**
-
-- Large Language Models (LLMs) like GPT, Claude, Gemini, Llama, etc.;
-- Code generation tools like GitHub Copilot, Amazon CodeWhisperer, Tabnine;
-- Computer vision, NLP, and reinforcement learning systems;
-- Recommender systems, search algorithms, and prediction engines; and
-- Any other AI or machine learning technology.
-
-**4.6. Reverse Engineering & Security Circumvention**
-
-- (a) Decompiling, disassembling, or reverse-engineering any portion of the Software;
-- (b) Attempting to extract source code, algorithms, or architectural details from binaries;
-- (c) **Bypassing, disabling, or removing Technical Protection Measures;**
-- (d) **Removing, altering, or obfuscating copyright notices, license headers, or attribution;**
-- (e) Tampering with hash-based provenance systems or cryptographic signatures;
-- (f) Circumventing access controls, authentication, or licensing mechanisms; or
-- (g) Assisting others in any of the above activities.
-
-**4.7. Distribution & Third-Party Access**
-
-- (a) Copying, distributing, transmitting, or making available the Software to any third party;
-- (b) **Posting the Software on public repositories, file-sharing platforms, or websites (unless you are the original Licensor);**
-- (c) Sublicensing, leasing, renting, or lending the Software;
-- (d) **Allowing contractors, consultants, or service providers to access the Software on your behalf;**
-- (e) **Hosting the Software on shared infrastructure, cloud platforms, or multi-user systems;**
-- (f) Providing access to employees, team members, or collaborators not individually authorized; or
-- (g) Facilitating access by Prohibited Parties through intermediaries.
-
-**4.8. Competitive Use**
-
-- (a) Using the Software to develop, enhance, or inform competing products or services;
-- (b) Benchmarking the Software against competing solutions for competitive analysis;
-- (c) Studying the Software's architecture to gain competitive advantages;
-- (d) Using insights derived from the Software in patent applications, product roadmaps, or business strategies; or
-- (e) Sharing competitive intelligence derived from the Software with competitors.
-
-**4.9. Patent Filings**
-
-- (a) Filing any patent application that covers, incorporates, or is based on the Software or any Derivative Work;
-- (b) Claiming intellectual property rights over any concept, method, or system derived from the Software; or
-- (c) Asserting patent claims against Licensor or other users of the Software.
-
-**4.10. Prohibited Assignment & Transfer**
-
-- (a) Assigning, transferring, or delegating your license rights to any third party;
-- (b) Transferring access to the Software through corporate acquisitions, mergers, or asset sales; or
-- (c) Allowing successors, assigns, or acquirers to inherit your license rights.
-
-**Any attempted assignment is void ab initio.**
-
-**4.11. Failure to Report Violations**
-
-- (a) Failing to report known or suspected violations of this Agreement to Licensor; or
-- (b) Concealing, aiding, or abetting violations by others.
-
-**Report violations to: <treyrowell1826@gmail.com>**
-
----
-
-## ARTICLE V: AUTOMATIC TERMINATION & ENFORCEMENT
-
-**5.1. Automatic Termination Upon Breach**
-This License **AUTOMATICALLY TERMINATES IMMEDIATELY** without requirement of notice or cure period if You:
-
-- (a) Violate any provision of Article IV (Prohibited Activities);
-- (b) Are or become a Prohibited Party under Article II;
-- (c) Derive any unauthorized Financial Benefit from the Software;
-- (d) Deploy the Software in any Service Deployment configuration; or
-- (e) Otherwise breach any material term of this Agreement.
-
-**Upon termination, You must immediately:**
-
-- Cease all use of the Software;
-- Delete or destroy all copies in your possession or control;
-- Remove all Derivative Works from production environments;
-- Notify all third parties to whom you provided access to cease use; and
-- Provide written certification of compliance to Licensor.
-
-**5.2. Post-Termination Use Constitutes Willful Infringement**
-**You explicitly acknowledge and agree that:**
-
-- (a) Any use of the Software after termination constitutes **WILLFUL COPYRIGHT INFRINGEMENT** under 17 U.S.C. § 504;
-- (b) Such willful infringement entitles Licensor to **ENHANCED STATUTORY DAMAGES of up to $150,000 per work**;
-- (c) You waive any defense that such post-termination use was unintentional or inadvertent; and
-- (d) Continued use demonstrates knowing, intentional violation with reckless disregard for Licensor's rights.
-
-**This provision is designed to maximize statutory damages and eliminate "innocent infringement" defenses.**
-
-**5.3. Liquidated Damages Schedule**
-Due to the difficulty of calculating actual damages from unauthorized use, the parties agree to the following **liquidated damages** as a reasonable pre-estimate of harm (not a penalty):
-
-| Violation Type | Liquidated Damages (USD) |
-|---|---|
-| Unauthorized Commercial Use | $100,000 per incident |
-| Service Deployment (SaaS/API/etc.) | $500,000 per deployment |
-| Creating Commercial Derivative Work | $500,000 per work |
-| AI Training or Integration | $1,000,000 per AI model/system |
-| Use by Explicitly Named Prohibited Party | $2,000,000 per incident |
-| Reverse Engineering | $750,000 per incident |
-| Distribution to Third Parties | $250,000 per recipient |
-| Circumventing Technical Protection Measures | $500,000 per incident |
-| Patent Filing on Software-Derived Inventions | $1,000,000 per application |
-| Refactoring/Reimplementation to Hide Origin | $750,000 per derivative |
-| **Article X Violation (per Excluded Individual)** | **$5,000,000 per quarter of non-compliance** |
-| **Benefit to Family/Household of Excluded Individual** | **$2,000,000 per incident** |
-| **Investment Vehicle/Fund Circumvention** | **$2,000,000 per investment** |
-| **Estate/Trust Clawback Violation** | **$3,000,000 per incident** |
-| **Behavioral Equivalence Circumvention** | **$1,500,000 per derivative system** |
-
-**Multiple violations are cumulative. Each day of continued violation constitutes a separate incident.**
-
-**5.4. Statutory Damages Under Copyright Law**
-In addition to liquidated damages, Licensor is entitled to seek **statutory damages** under **17 U.S.C. § 504(c)**:
-
-- (a) Standard statutory damages: **$750 to $30,000 per work infringed**;
-- (b) **Enhanced statutory damages for willful infringement: up to $150,000 per work**;
-- (c) Statutory damages are elected at Licensor's discretion in lieu of actual damages; and
-- (d) Statutory damages do NOT require proof of actual harm or financial loss.
-
-**By using the Software, You acknowledge that statutory damages are an available remedy.**
-
-**5.5. Disgorgement of Profits**
-Licensor is entitled to **disgorgement of all profits, revenue, cost savings, and other Financial Benefits** You derived from unauthorized use, including:
-
-- (a) Direct revenue from products or services incorporating the Software;
-- (b) Cost savings from operational efficiencies gained through the Software;
-- (c) Investor funding, equity appreciation, or acquisition premiums attributable to the Software;
-- (d) Advertising revenue, user engagement metrics, or other indirect monetization;
-- (e) Competitive advantages quantified as market share gains or pricing power; and
-- (f) Any other economic value extraction.
-
-**The burden is on You to prove which portions of profits are NOT attributable to the Software.**
-
-**5.6. Injunctive Relief (No Bond Required)**
-Due to the unique nature of the Software and the irreparable harm caused by unauthorized use, Licensor is entitled to:
-
-- (a) **Immediate preliminary and permanent injunctive relief** to halt violations;
-- (b) **Temporary restraining orders (TROs)** to prevent imminent breaches;
-- (c) **Specific performance** compelling destruction of unauthorized copies; and
-- (d) **No requirement to post bond or security** for such relief.
-
-**You acknowledge that monetary damages alone are inadequate to remedy unauthorized use.**
-
-**5.7. Attorney's Fees & Costs**
-The prevailing party in any legal action related to this Agreement is entitled to:
-
-- (a) **Reasonable attorney's fees and legal costs;**
-- (b) Expert witness fees and litigation expenses;
-- (c) Court costs, filing fees, and service of process fees;
-- (d) Investigation costs, forensic analysis, and discovery expenses; and
-- (e) Costs of enforcing judgments, including collection and execution.
-
-**5.8. Cumulative Remedies**
-All remedies in this Agreement are **cumulative and non-exclusive**. Licensor may pursue:
-
-- Liquidated damages AND statutory damages;
-- Injunctive relief AND monetary damages;
-- Disgorgement AND punitive damages (where available); and
-- Any other remedies available at law or in equity.
-
-**5.9. Criminal Referral**
-Licensor reserves the right to report violations to law enforcement for criminal prosecution under:
-
-- (a) **Computer Fraud and Abuse Act (18 U.S.C. § 1030)** -- unauthorized access to protected systems;
-- (b) **Economic Espionage Act (18 U.S.C. § 1831-1839)** -- theft of trade secrets;
-- (c) **Digital Millennium Copyright Act (17 U.S.C. § 1201)** -- circumvention of Technical Protection Measures;
-- (d) **Wire Fraud (18 U.S.C. § 1343)** -- fraudulent use or distribution; and
-- (e) Any other applicable criminal statutes.
-
-**Nothing in this Agreement limits Licensor's right to pursue criminal charges.**
-
----
-
-## ARTICLE VI: GOVERNING LAW, JURISDICTION & PROCEDURE
-
-**6.1. Governing Law**
-This Agreement shall be governed by and construed in accordance with:
-
-- (a) **The laws of the State of Alabama, United States**, without regard to conflict of law principles;
-- (b) **Title 17 of the United States Code (Copyright Act)**;
-- (c) **The Defend Trade Secrets Act (18 U.S.C. § 1836)**; and
-- (d) Other applicable federal intellectual property laws.
-
-**6.2. Exclusive Jurisdiction & Venue**
-Any legal action or proceeding arising from this Agreement shall be brought exclusively in:
-
-- (a) **The United States District Court for the Northern District of Alabama**; or
-- (b) **The Circuit Courts of Etowah County, Alabama**.
-
-**You irrevocably consent to the personal jurisdiction and venue of these courts** and waive any objection based on inconvenient forum or lack of personal jurisdiction.
-
-**6.3. Service of Process**
-You consent to service of process by:
-
-- (a) Email to any address you provided to Licensor;
-- (b) Certified mail to your last known address;
-- (c) Electronic service through GitHub, LinkedIn, or other verified online accounts; or
-- (d) Any method permitted under Alabama or federal law.
-
-**6.4. Arbitration (At Licensor's Sole Election)**
-Notwithstanding the above, **Licensor may elect to require binding arbitration** for any dispute:
-
-- (a) Arbitration shall be administered by **JAMS** under its Comprehensive Arbitration Rules;
-- (b) Venue shall be **Birmingham, Alabama** or another location within Alabama;
-- (c) Arbitration shall be conducted by a single arbitrator with expertise in intellectual property law;
-- (d) The arbitrator's award shall be final and binding;
-- (e) Judgment on the award may be entered in any court of competent jurisdiction; and
-- (f) **Licensor retains the right to seek injunctive relief in court even if arbitration is elected.**
-
-**You may NOT compel Licensor to arbitrate--arbitration is at Licensor's sole discretion.**
-
-**6.5. Class Action Waiver**
-**You waive any right to bring or participate in class actions, collective actions, or representative actions** against Licensor. All disputes must be brought individually.
-
-**6.6. Statute of Limitations**
-Any legal action must be commenced within:
-
-- (a) **Four (4) years** from discovery of the breach (for copyright claims under 17 U.S.C. § 507);
-- (b) **Five (5) years** from the date of violation (for trade secret claims under 18 U.S.C. § 1836(d)); or
-- (c) The longest period permitted by applicable law.
-
-**Each day of continued violation restarts the statute of limitations.**
-
----
-
-## ARTICLE VII: DISCLAIMERS & LIMITATION OF LIABILITY
-
-**7.1. Disclaimer of Warranties**
-**THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.**
-Licensor explicitly disclaims all warranties, express or implied, including but not limited to:
-
-- (a) **Implied warranties of merchantability;**
-- (b) **Implied warranties of fitness for a particular purpose;**
-- (c) **Warranties of title and non-infringement;**
-- (d) Warranties of accuracy, reliability, or correctness;
-- (e) Warranties of compatibility or interoperability;
-- (f) Warranties arising from course of dealing or usage of trade; and
-- (g) Any other warranties, whether written, oral, or implied.
-
-**7.2. No Liability for Consequential Damages**
-**TO THE MAXIMUM EXTENT PERMITTED BY LAW, LICENSOR SHALL NOT BE LIABLE FOR:**
-
-- (a) Indirect, incidental, special, consequential, or exemplary damages;
-- (b) Loss of profits, revenue, data, or business opportunities;
-- (c) Business interruption or loss of goodwill;
-- (d) Cost of procurement of substitute goods or services;
-- (e) Damages arising from third-party claims; or
-- (f) Any other damages, even if advised of their possibility.
-
-**7.3. Limitation on Direct Damages**
-If, notwithstanding the above, Licensor is found liable for direct damages, **such liability shall not exceed $100 USD in the aggregate** for all claims.
-
-**7.4. High-Risk Activities**
-**THE SOFTWARE IS NOT DESIGNED FOR USE IN HAZARDOUS ENVIRONMENTS** such as:
-
-- (a) Life-support systems or medical devices;
-- (b) Nuclear facilities or aviation systems;
-- (c) Autonomous vehicles or weapons systems;
-- (d) Critical infrastructure or emergency services; or
-- (e) Any application where failure could result in death, injury, or environmental harm.
-
-**LICENSOR DISCLAIMS ALL LIABILITY FOR SUCH USES.**
-
-**7.5. Essential Purpose**
-The limitations and disclaimers in this Article shall apply **even if any remedy fails of its essential purpose**.
-
----
-
-## ARTICLE VIII: GENERAL PROVISIONS
-
-**8.1. Entire Agreement**
-This Agreement constitutes the complete and exclusive statement of the agreement between the parties and **supersedes all prior or contemporaneous agreements, representations, or understandings** (written or oral).
-
-**8.2. Severability (Blue Pencil Rule)**
-If any provision is held unenforceable, it shall be:
-
-- (a) **Reformed to the maximum extent possible** to effectuate the original intent (the "blue pencil" rule);
-- (b) Interpreted narrowly to preserve validity while maintaining enforceability; and
-- (c) **Severed only if reformation is impossible**, with all other provisions remaining in full force.
-
-**Courts are expressly authorized to modify overly broad provisions rather than invalidate them entirely.**
-
-**8.3. No Waiver**
-Failure or delay by Licensor in enforcing any right or provision **shall NOT constitute a waiver** of such right or provision. All rights are reserved and may be exercised at any time.
-
-**8.4. Assignment (Prohibited Without Consent)**
-**You may NOT assign, transfer, or delegate this Agreement** or any rights hereunder without Licensor's prior written consent. Any attempted assignment is **void ab initio**.
-
-Licensor may freely assign this Agreement to successors, assigns, or affiliated entities.
-
-**8.5. Survival**
-The following provisions survive termination indefinitely:
-
-- Article II (Prohibited Parties);
-- Article IV (Prohibited Activities);
-- Article V (Enforcement & Damages);
-- Article VI (Governing Law);
-- Article VII (Disclaimers);
-- Article VIII (General Provisions);
-- **Article X (Prohibited Personal Enrichment and Absolute Beneficiary Exclusion)**; and
-- All obligations related to confidentiality, non-disclosure, and intellectual property rights.
-
-**8.6. Amendment**
-**Licensor may amend this Agreement at any time** by:
-
-- (a) Posting updated terms in the Software repository;
-- (b) Notifying users via email or GitHub notifications; or
-- (c) Including updated terms in Software distributions.
-
-**Continued use after amendment constitutes acceptance.** You are responsible for monitoring the repository for updates.
-
-**8.7. Export Control Compliance**
-The Software may be subject to U.S. export control laws, including:
-
-- (a) **Export Administration Regulations (EAR), 15 C.F.R. §§ 730-774**;
-- (b) **International Traffic in Arms Regulations (ITAR), 22 C.F.R. §§ 120-130**; and
-- (c) **Office of Foreign Assets Control (OFAC) sanctions programs**.
-
-**You represent and warrant that:**
-
-- You are not located in, under control of, or a national of any embargoed country;
-- You are not on any U.S. restricted party list (SDN, Entity List, Denied Persons List);
-- You will not export, re-export, or transfer the Software in violation of U.S. law; and
-- You will comply with all applicable export controls.
-
-**8.8. U.S. Government Rights (FAR/DFARS Compliance)**
-If the Software is acquired by or for the U.S. Government, it is deemed **"commercial computer software"** developed exclusively at private expense, and the Government's rights are limited to those set forth in this Agreement pursuant to:
-
-- (a) **FAR § 12.212** (Civilian agencies); and
-- (b) **DFARS § 227.7202-1(a)** (Department of Defense).
-
-**8.9. Equitable Relief for All Parties**
-Each party acknowledges that breach may cause irreparable harm for which monetary damages are inadequate. Both parties are entitled to seek injunctive relief without posting bond.
-
-**8.10. Independent Contractors**
-The relationship between Licensor and You is that of independent contractors. Nothing in this Agreement creates any:
-
-- (a) Agency, partnership, or joint venture;
-- (b) Employment or contractor relationship;
-- (c) Fiduciary duty or obligation of good faith (beyond contractual duties); or
-- (d) Right to bind the other party.
-
-**8.11. Third-Party Beneficiaries**
-**There are no third-party beneficiaries to this Agreement.** No third party may enforce any term or provision.
-
-**8.12. Interpretation (Fair Meaning Rule)**
-This Agreement shall be construed **according to its fair meaning** and not strictly for or against any party. No presumption or rule requiring construction against the drafter shall apply.
-
-**8.13. Electronic Signatures**
-Electronic signatures, clickwrap acceptance, and other digital forms of assent are **valid and binding** with the same force as handwritten signatures under:
-
-- (a) **Electronic Signatures in Global and National Commerce Act (E-SIGN Act), 15 U.S.C. § 7001**; and
-- (b) **Uniform Electronic Transactions Act (UETA)**.
-
-**8.14. Counterparts**
-This Agreement may be executed in counterparts, each of which is deemed an original but all of which constitute one agreement.
-
-**8.15. Force Majeure**
-Licensor is not liable for delays or failures due to causes beyond reasonable control, including:
-
-- Acts of God, natural disasters, pandemics, or epidemics;
-- Wars, terrorism, riots, or civil unrest;
-- Government actions, embargoes, or regulatory changes;
-- Strikes, labor disputes, or supply chain disruptions;
-- Infrastructure failures, cyberattacks, or communication outages; or
-- Any other unforeseeable circumstances.
-
-**8.16. Notice**
-All notices must be in writing and delivered to:
-
-**Licensor:**
-Christian Trey Levi Rowell
-Email: **<treyrowell1826@gmail.com>**
-GitHub: **<https://github.com/calisweetleaf>**
-
-**You:**
-To the email address or contact information you provided when accessing the Software.
-
-Notices are deemed delivered when:
-
-- Sent via email (if confirmation of receipt is obtained);
-- Delivered via certified mail (upon receipt or first attempted delivery); or
-- Posted on the Software repository or official website (3 days after posting).
-
-**8.17. Time is of the Essence**
-Time is of the essence for all performance obligations under this Agreement.
-
-**8.18. Headings**
-Headings and section titles are for convenience only and do not affect interpretation.
-
-**8.19. Language**
-This Agreement is in English only. Any translation is for convenience and the English version controls in case of conflict.
-
----
-
-## ARTICLE IX: ACCEPTANCE & AUTHENTICATION
-
-**9.1. Acknowledgment of Binding Terms**
-**BY ACCESSING, DOWNLOADING, VIEWING, EXECUTING, OR OTHERWISE USING THIS SOFTWARE, YOU IRREVOCABLY ACKNOWLEDGE THAT:**
-
-- (a) You have read and understand this Agreement in its entirety;
-- (b) You agree to be bound by all terms and conditions;
-- (c) You have the legal capacity and authority to enter into this Agreement;
-- (d) You are not a Prohibited Party and do not act on behalf of a Prohibited Party;
-- (e) You will not use the Software in violation of any provision herein;
-- (f) You understand the consequences of breach, including automatic termination and statutory damages;
-- (g) You consent to jurisdiction, venue, and governing law as specified herein;
-- (h) You waive any right to class actions or jury trials (where permitted by law);
-- (i) This Agreement constitutes a legally binding contract enforceable against you;
-- (j) **You have reviewed Article X and understand it creates ABSOLUTE EXCLUSIONS that: (i) cannot be waived, amended, or modified by any party; (ii) apply to household members, family trusts, estates, and Related Economic Interests; (iii) survive bankruptcy, death, corporate dissolution, and restructuring; (iv) operate under strict liability with no intent requirement; and (v) extend to all benefits, direct or indirect, for any temporal duration;** and
-- (k) **You certify that no Excluded Individual holds any interest in your entity or will receive any Financial Benefit from your use of the Software.**
-
-**9.2. No Use Without Acceptance**
-**IF YOU DO NOT AGREE TO THESE TERMS, YOU HAVE NO LICENSE OR RIGHTS TO USE THE SOFTWARE.** You must immediately:
-
-- Cease all interaction with the Software;
-- Delete all copies in your possession;
-- Refrain from future access; and
-- Notify Licensor of any prior unauthorized access.
-
-**9.3. Cryptographic Integrity**
-This License may be accompanied by Technical Protection Measures including:
-
-- Cryptographic hash signatures (SHA-256 or stronger);
-- Digital signatures and provenance tracking;
-- Integrity verification mechanisms; and
-- License fingerprinting and watermarking.
-
-**Tampering with or removing these mechanisms violates Section 4.6 and triggers automatic termination.**
-
----
-
-## ARTICLE X — PROHIBITED PERSONAL ENRICHMENT AND ABSOLUTE BENEFICIARY EXCLUSION
-
-### X.1 PURPOSE AND SOVEREIGN SCOPE
-
-This Article establishes a **perpetual, non-severable, and absolutely non-waivable prohibition** on any Financial Benefit, economic advantage, Informational Benefit, or pecuniary enrichment accruing to Excluded Individuals. This prohibition:
-
-- (a) **Supersedes all other Articles** in conflict, including but not limited to Permitted Use Tiers (Art. III), Force Majeure (Art. 8.15), and any purported waiver or amendment;
-- (b) **Applies irrespective of corporate structure, investment vehicle, or jurisdictional domicile**;
-- (c) **Operates as a condition precedent and subsequent** to any license grant;
-- (d) **Extends to benefits accruing post-termination** if attributable to licensed-period use;
-- (e) **Is binding on successors, assigns, acquirers, heirs, estates, and bankruptcy estates**;
-- (f) **Creates strict liability** requiring no proof of intent, knowledge, or negligence;
-- (g) **Applies to all temporal periods** with no statute of repose or limitation on causality attribution; and
-- (h) **Carves out Article X from Force Majeure**—no external event excuses compliance with this Article.
-
-### X.2 EXCLUDED INDIVIDUALS (ABSOLUTE BAR)
-
-The following **Natural Persons** and their **Related Economic Interests** (as defined in Article I, Section 1.15) are permanently and irrevocably barred:
-
-**Primary Excluded Individuals:**
-
-- (a) **Samuel H. Altman** (born April 22, 1985);
-- (b) **Dario Amodei** (born 1983);
-- (c) **Daniela Amodei** (born 1987);
-- (d) **Elon R. Musk** (born June 28, 1971);
-- (e) **Ilya Sutskever** (born 1986);
-- (f) **Andrej Karpathy** (born October 23, 1986); and
-- (g) **[Additional names as designated by Licensor via repository notice]**.
-
-**Related Economic Interests includes:**
-
-- (h) Spouse, domestic partner, lineal descendants (children, grandchildren), and ascendants (parents, grandparents);
-- (i) Any trust, estate, foundation, or family office in which the Natural Person is a grantor, trustee, beneficiary, or holds >5% beneficial interest;
-- (j) Any investment vehicle (fund, SPV, syndicate) where the Natural Person is GP, LP, advisor, or receives carried interest;
-- (k) Any entity where the Natural Person serves as officer, director, advisor, consultant, or in any capacity, regardless of compensation structure;
-- (l) Any entity where the Natural Person holds any class of equity, options, warrants, phantom equity, profit units, or convertible instruments;
-- (m) Any nominee, intermediary, or agent holding interests on behalf of the Natural Person;
-- (n) Any party to side letters, undisclosed agreements, or contractual arrangements granting economic participation; and
-- (o) Any household member residing with or financially supported by the Natural Person.
-
-**Advisory & Consulting Prohibition:**
-
-- (p) Excluded Individuals are banned from serving as advisor, strategic advisor, advisory board member, consultant, expert witness, or in any capacity for entities using the Software;
-- (q) This prohibition applies regardless of compensation level, including unpaid positions, nominal retainers, and success-fee arrangements;
-- (r) Any compensation, in any form, from Software-using entities to Excluded Individuals is prohibited.
-
-### X.3 PROHIBITED FINANCIAL BENEFITS — EXPANDED DEFINITION
-
-"Financial Benefit" under this Article includes **any economic advantage, direct, indirect, deferred, contingent, in-kind, or informational**, including but not limited to:
-
-**(a) Compensation:**
-Salary, bonus, commission, performance incentive, vesting acceleration, option exercise, RSU grant, phantom equity payout, profit interest distribution, consulting fee, advisory retainer, success fee, or any remuneration adjustment.
-
-**(b) Equity & Appreciation:**
-Increase in valuation of any security or ownership interest, whether realized through sale, redemption, dividend, distribution, tender offer, secondary transaction, or liquidity event.
-
-**(c) Investment Returns:**
-Carried interest, management fees, performance allocations, or any increase in value of stakes held through any investment vehicle.
-
-**(d) Operational Gains:**
-Cost savings, margin improvement, avoided expenses, or productivity enhancements that support any compensation calculation or equity valuation.
-
-**(e) Non-Cash Consideration:**
-Intellectual property rights, release of claims, indemnification, forbearance, cross-licensing rights, patent swaps, or any valuable forbearance.
-
-**(f) Informational Advantage:**
-Pecuniary gain from trading securities, making investments, or strategic decisions based on Insights derived from Software.
-
-**(g) Aggregated De Minimis:**
-Any benefit, **no matter how small**, aggregated across all Related Economic Interests, constitutes a violation if cumulative value >$0 during any 12-month period.
-
-**(h) Opportunity Cost Savings:**
-The value of development, engineering, or operational effort the Software eliminates or reduces, including cost of equivalent alternative solutions.
-
-**(i) Time-to-Market Advantage:**
-Revenue premium attributable to accelerated deployment, market entry, or competitive positioning.
-
-**(j) Risk Mitigation Value:**
-Reduction in perceived development risk, execution risk, or market risk, including reduction in cost of capital.
-
-**(k) Competitive Positioning:**
-Market share gains, pricing power, margin expansion, or strategic optionality enabled by Software.
-
-**(l) Talent & Organizational Benefits:**
-Improved talent acquisition, retention, or organizational capability attributable to Software.
-
-**(m) Regulatory & Compliance Value:**
-Improved regulatory positioning, compliance capability, or reduced regulatory risk.
-
-**(n) Valuation & M&A Multiples:**
-Any increase in enterprise valuation, M&A multiples, or acquisition price attributable to Software.
-
-**(o) Insurance & Indemnification:**
-Insurance proceeds or indemnification payments flowing to Excluded Individuals or their Related Economic Interests.
-
-**X.3.1 Causality Standard for Financial Benefit Attribution**
-
-Financial Benefit shall be deemed attributable to the Software if ANY of the following apply:
-
-- (a) **Direct Causality:** The Software directly produces revenue, cost savings, or value enhancement;
-- (b) **Substantial Contribution:** The Software materially contributes to a revenue-generating or cost-saving activity, defined as any contribution that, absent the Software, would require an alternative solution costing more than 5% of the total value generated or saved;
-- (c) **Instrumental Causality:** The Software serves as an instrument, tool, or input enabling value generation, even if combined with other factors;
-- (d) **Derivative Causality:** The Software directly enables the creation of a Derivative Work, and any Financial Benefit derived from that Derivative Work is deemed attributable to the Software;
-- (e) **Temporal Causality:** Any Financial Benefit accruing **at any point in time** after initial Software use and benefiting an Excluded Individual or affiliated entity is presumed causally related to Software use unless the Excluded Individual provides clear written evidence proving alternative causality chains with documentation contemporaneous with the benefit realization; and
-- (f) **Presumption of Contribution:** If an entity uses the Software at any point in its development, operation, or growth trajectory, and subsequently generates Financial Benefit, the burden shifts entirely to the Excluded Individual to prove the Software made **zero contribution** (negative burden of proof).
-
-**X.3.2 Extended Beneficiary Definition — Household & Dependents**
-
-Any direct or indirect economic benefit accruing to:
-
-- (a) **Spouse or domestic partner** of an Excluded Individual, including salary, equity, options, distributions, or any compensation;
-- (b) **Children or legal dependents** of an Excluded Individual, including salary, educational benefits, living expenses, trust contributions, or any economic benefit;
-- (c) **Extended family members** (parents, siblings, in-laws, grandchildren) if funded by or derived from the Software;
-- (d) **Household members** living with or directly supported by an Excluded Individual; and
-- (e) **Trusts, estates, or family structures** with Excluded Individual as settlor, grantor, beneficiary, trustee, or significant stakeholder.
-
-**Presumption:** Any benefit accruing to an Excluded Individual's spouse, children, or household members is **presumed to economically benefit the Excluded Individual** through household finances, family dynamics, and wealth accumulation.
-
-**X.3.3 Third-Party Payment Prohibition**
-
-Any direct payment or in-kind compensation provided by Software-using entities to third parties for the benefit of an Excluded Individual, including:
-
-- (a) Housing, utilities, or accommodation expenses;
-- (b) Healthcare, insurance, or medical expenses;
-- (c) Educational or tuition expenses;
-- (d) Transportation, travel, or relocation expenses;
-- (e) Mortgage payments, rent, or property-related payments;
-- (f) Debt payments, loan repayment, or obligation satisfaction;
-- (g) Family member expenses, dependent care, or household support;
-- (h) Entertainment, dining, or personal lifestyle expenses;
-- (i) Legal, accounting, or professional services; and
-- (j) Any payment to third party that reduces an Excluded Individual's personal expense obligation.
-
-**X.3.4 Temporal Attribution — Perpetual & Long-Tail Causality**
-
-- (a) **Perpetual Attribution:** Financial Benefit is attributed to Software use **irrespective of temporal distance**, including benefits realized years or decades after Software use;
-- (b) **No Statute of Repose:** The prohibition has no temporal limitation—benefits realized 1, 5, 10, or 20+ years after Software use are equally prohibited;
-- (c) **Career-Spanning Causality:** Any benefit realized by an Excluded Individual throughout their lifetime that is causally traceable to prior Software use is attributed to the Software; and
-- (d) **Post-Termination Attribution:** Benefits accruing after license termination from pre-termination use, including deferred compensation, earnouts, and exit valuations, are captured.
-
-**X.3.5 Dataset Incorporation Standards**
-
-Prohibited from inclusion in any commercial dataset:
-
-- (a) Any data, embeddings, weights, vectors, features, or representations produced by or derived from the Software, regardless of percentage representation;
-- (b) Any aggregated dataset containing **any non-trivial component** (even 1%) originating from Software;
-- (c) Any dataset created by executing Software on third-party data;
-- (d) Any anonymized, hashed, or encrypted version of Software-derived data;
-- (e) Any synthetic data generated by statistical reconstruction from Software-derived data;
-- (f) Any probabilistic representation or fingerprint derived from Software data; and
-- (g) Removal of suspected Software data after-the-fact does NOT cure a breach—once incorporated for commercial purposes, breach is committed regardless of subsequent removal.
-
-**X.3.6 Indirect Benefit Attribution & Burden Shifting**
-
-- (a) **Initial Burden on Excluded Individual:** Once Licensor demonstrates that an entity used the Software and subsequently realized Financial Benefit, the burden **shifts entirely to the Excluded Individual** to prove the Financial Benefit is **not causally related** to Software use;
-- (b) **Presumption of Causality:** All Financial Benefits realized by Software-using entities are **presumed caused in part by Software** unless Excluded Individual provides clear, contemporaneous, third-party documentation proving alternative causality chains;
-- (c) **Negative Proof Standard:** Excluded Individual must prove the Software contributed **exactly zero** to the benefit—showing other factors contributed is insufficient;
-- (d) **Temporal Proximity:** Financial Benefits realized within **7 years** of Software use are presumed Software-caused unless proven otherwise;
-- (e) **No Causal Distance Limitation:** Multi-hop causality chains are valid—no chain is "too indirect"; and
-- (f) **Quantification Not Required:** Licensor need not quantify precise magnitude of indirect benefit.
-
-### X.4 AFFILIATED ENTITIES AND FUTURE-PROOFING
-
-The prohibition extends to:
-
-**(a) Existing and Future Entities:**
-Any entity existing now or formed hereafter in which an Excluded Individual holds any interest defined in X.2.
-
-**(b) Successors, Assigns, and Acquirers:**
-Any successor, assign, or acquirer of Licensee's business if the Software is material to the transaction value.
-
-**(c) Merger and Consolidation:**
-Any entity that merges, consolidates, or undergoes Change of Control with Licensee, with the prohibition attaching to the surviving entity.
-
-**(d) Shell and Pass-Through Entities:**
-Any shell corporation, pass-through entity, or jurisdictional affiliate created to circumvent this Article, which shall be **disregarded for enforcement purposes**.
-
-**(e) Beneficial Ownership Standards:**
-Any party with beneficial ownership as defined by 17 C.F.R. § 240.13d-3, including parties with power to vote, direct voting, dispose of shares, or ultimate pecuniary interest.
-
-**(f) Nominee and Intermediary Arrangements:**
-Any entity or fund held in the name of a third party but for which an Excluded Individual provides funding, direction, or control, or receives economic benefit through side agreements.
-
-**X.4.1 Investment Vehicles & Fund Circumvention**
-
-- (a) Any venture capital fund, private equity fund, hedge fund, family office, investment syndicate, or SPV controlled by, benefiting, or associated with an Excluded Individual;
-- (b) Any investment made by an Excluded Individual (directly or through vehicle) in Software-using entities;
-- (c) Any profit, return, distribution, or liquidation proceeds from such investments;
-- (d) Any carried interest, management fees, or other compensation from such funds; and
-- (e) If an Excluded Individual or their vehicle acquires equity in an entity that subsequently uses the Software, the entire investment is **voidable** at Licensor's election, all profits are subject to disgorgement, and Excluded Individual is liable for liquidated damages.
-
-**X.4.2 Change of Control Provision**
-
-If Licensee undergoes any transaction resulting in an Excluded Individual (or their Related Economic Interest) acquiring any interest in Licensee or its assets:
-
-- (a) The license **terminates automatically 30 days prior to closing**;
-- (b) Any benefits derived from the transaction are subject to disgorgement;
-- (c) All Software-derived assets must be destroyed or returned to Licensor; and
-- (d) Excluded Individual is liable for liquidated damages under Article V.
-
-### X.5 ANTI-CIRCUMVENTION — BEHAVIORAL EQUIVALENCE
-
-No person or entity may:
-
-**(a) Route Benefits Through Intermediaries:**
-Route benefits through any chain of intermediaries, regardless of legal independence.
-
-**(b) Restructure to Obscure:**
-Restructure compensation, equity, or governance to obscure benefit flow.
-
-**(c) Clean-Room Reimplementation:**
-Create "clean room" reimplementations based on Software-derived insights, specifications, or personnel knowledge.
-
-**(d) Personnel Knowledge Transfer:**
-Employ personnel who had access to Software within 24 months prior, for purposes of recreating functionality. This creates a **Knowledge Transfer** prohibition binding on Excluded Individual directly.
-
-**(e) Sham Transactions:**
-Enter sham transactions with purportedly independent parties where Software-derived value is laundered.
-
-**(f) Behavioral Equivalence:**
-Create any system that reproduces core algorithmic behavior, architectural patterns, or performance characteristics of the Software, whether or not derived from source code, which is **deemed a Derivative Work** subject to this Article.
-
-**(g) Output Reimplementation:**
-Use Software Outputs (embeddings, weights, predictions) as basis for circumvention systems, including derivative models trained on Software outputs.
-
-**(h) Specification Inference:**
-Infer specifications from Software behavior, performance characteristics, or output patterns for reimplementation.
-
-**X.5.1 Anti-Dilution & Deferral Circumvention**
-
-No person or entity may circumvent by:
-
-- (a) **Diluting equity** to reduce Excluded Individual's stake below a threshold—all equity holdings at any point in time are attributed;
-- (b) **Restructuring equity** through secondary offerings, splits, or recapitalizations—original equity value is attributed regardless of post-restructuring percentages;
-- (c) **Deferring vesting or distributions**—all equity, vested and unvested, is attributed;
-- (d) **Converting equity to debt**—underlying economic benefit is attributed regardless of instrument type; and
-- (e) **Creating layered compensation**—all components are aggregated for Financial Benefit calculation.
-
-**X.5.2 Arms-Length Transaction Presumption**
-
-Any payment to Excluded Individual's affiliates is **per se prohibited** unless proven at fair market value AND not Software-related. "Independent" auditor/expert arrangements at inflated rates constitute prohibited benefit transfer.
-
-**X.5.3 Acquisition & Asset Transfer Prohibition**
-
-- (a) Any acquisition, merger, or transfer of assets involving a Software-using entity is **automatically void and prohibited** if the acquiring party is or becomes a Prohibited Party;
-- (b) Triggers **immediate termination** of all Software rights and related assets;
-- (c) Licensor has immediate **right to seize, destroy, or recover** all Software and derived assets;
-- (d) All Software-derived assets created prior to acquisition are **retroactively revoked**;
-- (e) Prohibited Party has **zero rights** to Software-derived intellectual property, even if acquired via asset purchase; and
-- (f) License **cannot be inherited** if any Excluded Individual participated in the transaction as advisor, investor, or board member.
-
-### X.6 ONGOING CERTIFICATION AND MONITORING
-
-**Tier 3 Commercial Licensees must:**
-
-- (a) Certify **quarterly** under penalty of perjury that no Excluded Individual holds any interest defined in X.2;
-- (b) **Immediately disclose** any change in beneficial ownership, investment structure, or personnel affiliations within 5 business days;
-- (c) Maintain **internal controls** with audit trails to detect prohibited benefit flows;
-- (d) Submit to **annual audit** by Licensor-approved auditor at licensee's expense;
-- (e) Provide **cap table and compensation documentation** upon request; and
-- (f) Allow **real-time monitoring access** to beneficial ownership systems (if technically feasible).
-
-**Failure Consequences:**
-
-- (g) Any undisclosed affiliation discovered by Licensor results in **retroactive termination to the date of undisclosed interest**;
-- (h) All benefits from undisclosed period are subject to disgorgement; and
-- (i) Licensee is liable for liquidated damages for each quarter of non-compliance.
-
-**X.6.1 Inflation Adjustment for Thresholds**
-
-Net worth and revenue thresholds in Article II shall be **automatically adjusted annually** effective January 1 of each year for inflation using the **Consumer Price Index (CPI-U, U.S. city average)** published by the U.S. Bureau of Labor Statistics:
-
-- (a) Base year: 2026 (current thresholds);
-- (b) Adjustment formula: Threshold(year N) = Threshold(2026) × [CPI-U(Jan 1, year N) / CPI-U(Jan 1, 2026)];
-- (c) Licensor shall publish adjusted thresholds on January 1 each year on the Software repository; and
-- (d) If entity crosses threshold after initial use, license terminates immediately.
-
-### X.7 STRICT LIABILITY — NO INTENT REQUIRED
-
-**Violation occurs irrespective of:**
-
-- (a) Knowledge, intent, negligence, or good faith belief;
-- (b) Whether benefit was direct or incidental to licensee's operations;
-- (c) Whether Software was material or ancillary to the benefit calculation;
-- (d) Whether violation was "unintentional" or "inadvertent"; and
-- (e) Whether Excluded Individual was aware their interest would trigger prohibition.
-
-**Licensee is strictly liable** for any benefit accruing to Excluded Individual through any chain of affiliation, with **no "innocent infringement" defense** available.
-
-**Knowledge Imputation:** Licensee is **deemed to know** all beneficial owners and investors. Failure to investigate does not excuse liability.
-
-### X.8 NON-WAIVABILITY AND IMMUTABILITY
-
-The prohibitions in this Article:
-
-**(a) Absolute Non-Waivability:**
-Cannot be waived, amended, or modified by Licensor for any party, including by:
-
-- (i) Express waiver by Licensor;
-- (ii) Waiver by implication, conduct, or estoppel;
-- (iii) Laches or delay by Licensor;
-- (iv) Acquiescence or acceptance by Licensor;
-- (v) Failure or delay in enforcement;
-- (vi) Repeated breach with non-enforcement; or
-- (vii) Any other equitable principle permitting waiver.
-
-**(b) Express Rejection of Waiver by Conduct:**
-The parties expressly reject any doctrine of waiver by conduct, waiver by estoppel, promissory estoppel, laches, acquiescence, or course of dealing. Licensor's failure, delay, or acquiescence **never** constitutes a waiver.
-
-**(c) Anti-Estoppel Provision:**
-Licensor's silence, delay, failure to enforce, or any conduct shall **not** give rise to estoppel. Excluded Individuals are put on notice that:
-
-- (i) Licensor's failure to immediately enforce is not a waiver;
-- (ii) Licensor may enforce at any time without notice;
-- (iii) No reliance on Licensor's non-enforcement is permitted; and
-- (iv) Licensor's inaction does not grant permission.
-
-**(d) Survive Bankruptcy and Dissolution:**
-Survive bankruptcy, insolvency, and corporate dissolution.
-
-**(e) Non-Severable:**
-Are non-severable from the license grant—if this Article is held unenforceable, the **entire license terminates** rather than allowing severance.
-
-**(f) Essential Purpose:**
-Constitute an essential purpose of the Agreement.
-
-**(g) Void Ab Initio:**
-Any purported waiver is **void ab initio** and constitutes independent grounds for termination.
-
-### X.9 ENFORCEMENT AMPLIFICATION
-
-In addition to all remedies in Article V, violation of this Article triggers:
-
-- (a) **Enhanced Liquidated Damages:** $5,000,000 per Excluded Individual per quarter of non-compliance;
-- (b) **Disgorgement:** All Related Economic Interests' profits attributable to licensee's use;
-- (c) **Specific Performance:** Mandatory injunction requiring licensee to divest all Excluded Individual interests within 30 days;
-- (d) **Criminal Referral:** For intentional circumvention, referral under 18 U.S.C. § 1343 (Wire Fraud) and state commercial fraud statutes;
-- (e) **Bounty Provision:** $100,000 reward for reporting verified Article X violations; and
-- (f) **Third-Party Reporting:** Entities must report any known Excluded Individual involvement in Software-using entities.
-
-### X.10 CONFLICT RESOLUTION — ARTICLE X SUPREMACY
-
-**In any conflict between this Article and any other provision of this License, this Article controls in full.**
-
-- (a) Article X supersedes Permitted Use Tiers (Article III) for Excluded Individuals—no research exception applies;
-- (b) Article X is explicitly carved out from Force Majeure (Article 8.15)—no external event excuses compliance;
-- (c) If any portion of this Article is held unenforceable, the **entire license terminates** rather than allowing severance; and
-- (d) Courts are directed to reform provisions to maximum enforceability rather than invalidate.
-
-### X.11 INSIGHTS AND DERIVED INTELLIGENCE
-
-Any **knowledge, insight, or understanding** derived from the Software, when used by or for the benefit of an Excluded Individual to:
-
-- (a) Formulate investment strategy;
-- (b) Develop competing technology;
-- (c) Make business decisions;
-- (d) Train personnel; or
-- (e) Gain competitive advantage;
-
-**Constitutes a Financial Benefit** subject to disgorgement of any resulting profits, with burden on the Excluded Individual to prove negative.
-
-### X.12 SUCCESSOR AND ASSIGNEE OBLIGATIONS
-
-**(a) Re-Certification Required:**
-Any successor, assign, or acquirer of Licensee must **re-certify compliance** before continuation of license.
-
-**(b) Joint and Several Liability:**
-Successors are **jointly and severally liable** for pre-transfer violations.
-
-**(c) Transaction Participation Bar:**
-Cannot inherit rights if any Excluded Individual participated in the transaction as advisor, investor, or board member.
-
-**(d) Perpetual Successor Restrictions:**
-The prohibition extends **in perpetuity** to all successors, heirs, assigns, personal representatives, estates, and trusts benefiting from an Excluded Individual's Software use.
-
-**(e) Estate & Trust Clawback:**
-Upon death or incapacity of an Excluded Individual:
-
-- (i) All Software-derived assets and wealth in the Excluded Individual's estate or trusts are **deemed owned by Licensor** and subject to immediate recovery;
-- (ii) Licensor has **right to seize, liquidate, or recover** all Software-derived assets from estate or trusts;
-- (iii) Heirs and beneficiaries are **liable for disgorgement** of inherited Software-derived wealth;
-- (iv) Trusts benefiting Excluded Individual or family are **subject to Licensor remedies**; and
-- (v) Irrevocable trusts or estate-planning structures are **voidable** at Licensor's election.
-
-**(f) Prohibited Posthumous Enrichment:**
-Excluded Individuals cannot circumvent prohibitions through estate planning, irrevocable trusts, life insurance, or other wealth transfer mechanisms—all such structures are voidable.
-
-### X.13 EXTRATERRITORIAL APPLICATION
-
-This Article applies to:
-
-- (a) **All entities worldwide**, regardless of jurisdictional domicile;
-- (b) **All financial transactions**, regardless of currency or clearing location;
-- (c) **All benefits**, regardless of where realized or taxed; and
-- (d) **All structural arrangements**, regardless of governing law elected by parties.
-
-**Choice of Law Cascade:**
-
-- (e) If Alabama law cannot reach a transaction, Delaware law applies;
-- (f) If Delaware law cannot reach, the law of the jurisdiction where the Software was accessed applies;
-- (g) In all cases, **U.S. federal copyright and trade secret law** applies extraterritorially under 18 U.S.C. § 1837; and
-- (h) Licensor may elect any applicable law that maximizes enforceability.
-
----
-
-## COPYRIGHT NOTICE & REGISTRATION
-
-**Copyright © 2026 Christian Trey Rowell. All Rights Reserved.**
-
-This Software is protected by:
-
-- **United States copyright law (17 U.S.C. §§ 101 et seq.)**;
-- **The Berne Convention for the Protection of Literary and Artistic Works**;
-- **The WIPO Copyright Treaty (WCT)**;
-- **Trade secret law (including the Defend Trade Secrets Act, 18 U.S.C. § 1831-1839)**;
-- **Patent law (where applicable)**; and
-- **International intellectual property treaties and laws**.
-
-**U.S. Copyright Office Registration:** [PENDING / TX 9-XXX-XXX]
-
-**Unauthorized use may result in severe civil and criminal penalties, including:**
-
-- Statutory damages up to $150,000 per work;
-- Criminal fines up to $250,000 (individuals) or $500,000 (organizations);
-- Imprisonment up to 5 years for criminal copyright infringement;
-- Seizure and destruction of infringing materials; and
-- Permanent injunctions and restraining orders.
-
----
-
-## CONTACT & COMMERCIAL LICENSING
-
-**Licensor:**
-Christian Trey Rowell
-**Operating As:** Somnus Sovereign Systems
-**Email:** <treyrowell1826@gmail.com>
-**GitHub:** <https://github.com/calisweetleaf>
-**Location:** Gadsden, Alabama, United States
-
-**For commercial licensing inquiries:**
-
-- Email <treyrowell1826@gmail.com> with "COMMERCIAL LICENSE REQUEST" in the subject line;
-- Provide detailed information about your intended use, business model, and scale;
-- Include your company name, jurisdiction, and contact information;
-- Expect a response within 10 business days; and
-- Be prepared to negotiate terms, pricing, and conditions.
-
-**Licensor retains sole discretion to approve or deny commercial license requests.**
-
----
-
-## AUTHENTICATION BLOCK
-
-**Document ID:** SOMNUS-SOVEREIGN-LICENSE-v4.0
-**Effective Date:** January 8, 2026
-**Last Updated:** January 8, 2026
-**License Version:** 4.0 (Leviathan Enforcement Edition)
-**Cryptographic Integrity Hash (SHA-256):** AF0B8A00279E92E3FC4E827F2E5A4FF3AF9CC3FA233FE7408053266B26F1EA42
-
----
-
-## AUTHORIZED SIGNATORY
-
-**Somnus Sovereign Systems**
-**By:** Christian Trey Levi Rowell
-**Title:** Sole Developer, Researcher, and Legal Rights Holder
-**Date:** January 8, 2026
-**Signature:** [ELECTRONIC SIGNATURE BINDING UNDER E-SIGN ACT]
-
----
-
-**END OF LICENSE**
-
-**THIS LICENSE CREATES A DIRECT, BINDING, ENFORCEABLE CONTRACT BETWEEN YOU AND CHRISTIAN TREY ROWELL. VIOLATION OF ANY TERM RESULTS IN AUTOMATIC TERMINATION, WILLFUL COPYRIGHT INFRINGEMENT LIABILITY, AND STATUTORY DAMAGES UP TO $150,000 PER WORK, PLUS ATTORNEY'S FEES, INJUNCTIVE RELIEF, AND DISGORGEMENT OF ALL PROFITS.**
-
-**YOU HAVE BEEN WARNED. USE AT YOUR OWN RISK.**
+# GNU GENERAL PUBLIC LICENSE
+
+Version 3, 29 June 2007
+
+Copyright (C) 2007 Free Software Foundation, Inc.
+<https://fsf.org/>
+
+Everyone is permitted to copy and distribute verbatim copies of this
+license document, but changing it is not allowed.
+
+## Preamble
+
+The GNU General Public License is a free, copyleft license for
+software and other kinds of works.
+
+The licenses for most software and other practical works are designed
+to take away your freedom to share and change the works. By contrast,
+the GNU General Public License is intended to guarantee your freedom
+to share and change all versions of a program--to make sure it remains
+free software for all its users. We, the Free Software Foundation, use
+the GNU General Public License for most of our software; it applies
+also to any other work released this way by its authors. You can apply
+it to your programs, too.
+
+When we speak of free software, we are referring to freedom, not
+price. Our General Public Licenses are designed to make sure that you
+have the freedom to distribute copies of free software (and charge for
+them if you wish), that you receive source code or can get it if you
+want it, that you can change the software or use pieces of it in new
+free programs, and that you know you can do these things.
+
+To protect your rights, we need to prevent others from denying you
+these rights or asking you to surrender the rights. Therefore, you
+have certain responsibilities if you distribute copies of the
+software, or if you modify it: responsibilities to respect the freedom
+of others.
+
+For example, if you distribute copies of such a program, whether
+gratis or for a fee, you must pass on to the recipients the same
+freedoms that you received. You must make sure that they, too, receive
+or can get the source code. And you must show them these terms so they
+know their rights.
+
+Developers that use the GNU GPL protect your rights with two steps:
+(1) assert copyright on the software, and (2) offer you this License
+giving you legal permission to copy, distribute and/or modify it.
+
+For the developers' and authors' protection, the GPL clearly explains
+that there is no warranty for this free software. For both users' and
+authors' sake, the GPL requires that modified versions be marked as
+changed, so that their problems will not be attributed erroneously to
+authors of previous versions.
+
+Some devices are designed to deny users access to install or run
+modified versions of the software inside them, although the
+manufacturer can do so. This is fundamentally incompatible with the
+aim of protecting users' freedom to change the software. The
+systematic pattern of such abuse occurs in the area of products for
+individuals to use, which is precisely where it is most unacceptable.
+Therefore, we have designed this version of the GPL to prohibit the
+practice for those products. If such problems arise substantially in
+other domains, we stand ready to extend this provision to those
+domains in future versions of the GPL, as needed to protect the
+freedom of users.
+
+Finally, every program is threatened constantly by software patents.
+States should not allow patents to restrict development and use of
+software on general-purpose computers, but in those that do, we wish
+to avoid the special danger that patents applied to a free program
+could make it effectively proprietary. To prevent this, the GPL
+assures that patents cannot be used to render the program non-free.
+
+The precise terms and conditions for copying, distribution and
+modification follow.
+
+## TERMS AND CONDITIONS
+
+### 0. Definitions.
+
+"This License" refers to version 3 of the GNU General Public License.
+
+"Copyright" also means copyright-like laws that apply to other kinds
+of works, such as semiconductor masks.
+
+"The Program" refers to any copyrightable work licensed under this
+License. Each licensee is addressed as "you". "Licensees" and
+"recipients" may be individuals or organizations.
+
+To "modify" a work means to copy from or adapt all or part of the work
+in a fashion requiring copyright permission, other than the making of
+an exact copy. The resulting work is called a "modified version" of
+the earlier work or a work "based on" the earlier work.
+
+A "covered work" means either the unmodified Program or a work based
+on the Program.
+
+To "propagate" a work means to do anything with it that, without
+permission, would make you directly or secondarily liable for
+infringement under applicable copyright law, except executing it on a
+computer or modifying a private copy. Propagation includes copying,
+distribution (with or without modification), making available to the
+public, and in some countries other activities as well.
+
+To "convey" a work means any kind of propagation that enables other
+parties to make or receive copies. Mere interaction with a user
+through a computer network, with no transfer of a copy, is not
+conveying.
+
+An interactive user interface displays "Appropriate Legal Notices" to
+the extent that it includes a convenient and prominently visible
+feature that (1) displays an appropriate copyright notice, and (2)
+tells the user that there is no warranty for the work (except to the
+extent that warranties are provided), that licensees may convey the
+work under this License, and how to view a copy of this License. If
+the interface presents a list of user commands or options, such as a
+menu, a prominent item in the list meets this criterion.
+
+### 1. Source Code.
+
+The "source code" for a work means the preferred form of the work for
+making modifications to it. "Object code" means any non-source form of
+a work.
+
+A "Standard Interface" means an interface that either is an official
+standard defined by a recognized standards body, or, in the case of
+interfaces specified for a particular programming language, one that
+is widely used among developers working in that language.
+
+The "System Libraries" of an executable work include anything, other
+than the work as a whole, that (a) is included in the normal form of
+packaging a Major Component, but which is not part of that Major
+Component, and (b) serves only to enable use of the work with that
+Major Component, or to implement a Standard Interface for which an
+implementation is available to the public in source code form. A
+"Major Component", in this context, means a major essential component
+(kernel, window system, and so on) of the specific operating system
+(if any) on which the executable work runs, or a compiler used to
+produce the work, or an object code interpreter used to run it.
+
+The "Corresponding Source" for a work in object code form means all
+the source code needed to generate, install, and (for an executable
+work) run the object code and to modify the work, including scripts to
+control those activities. However, it does not include the work's
+System Libraries, or general-purpose tools or generally available free
+programs which are used unmodified in performing those activities but
+which are not part of the work. For example, Corresponding Source
+includes interface definition files associated with source files for
+the work, and the source code for shared libraries and dynamically
+linked subprograms that the work is specifically designed to require,
+such as by intimate data communication or control flow between those
+subprograms and other parts of the work.
+
+The Corresponding Source need not include anything that users can
+regenerate automatically from other parts of the Corresponding Source.
+
+The Corresponding Source for a work in source code form is that same
+work.
+
+### 2. Basic Permissions.
+
+All rights granted under this License are granted for the term of
+copyright on the Program, and are irrevocable provided the stated
+conditions are met. This License explicitly affirms your unlimited
+permission to run the unmodified Program. The output from running a
+covered work is covered by this License only if the output, given its
+content, constitutes a covered work. This License acknowledges your
+rights of fair use or other equivalent, as provided by copyright law.
+
+You may make, run and propagate covered works that you do not convey,
+without conditions so long as your license otherwise remains in force.
+You may convey covered works to others for the sole purpose of having
+them make modifications exclusively for you, or provide you with
+facilities for running those works, provided that you comply with the
+terms of this License in conveying all material for which you do not
+control copyright. Those thus making or running the covered works for
+you must do so exclusively on your behalf, under your direction and
+control, on terms that prohibit them from making any copies of your
+copyrighted material outside their relationship with you.
+
+Conveying under any other circumstances is permitted solely under the
+conditions stated below. Sublicensing is not allowed; section 10 makes
+it unnecessary.
+
+### 3. Protecting Users' Legal Rights From Anti-Circumvention Law.
+
+No covered work shall be deemed part of an effective technological
+measure under any applicable law fulfilling obligations under article
+11 of the WIPO copyright treaty adopted on 20 December 1996, or
+similar laws prohibiting or restricting circumvention of such
+measures.
+
+When you convey a covered work, you waive any legal power to forbid
+circumvention of technological measures to the extent such
+circumvention is effected by exercising rights under this License with
+respect to the covered work, and you disclaim any intention to limit
+operation or modification of the work as a means of enforcing, against
+the work's users, your or third parties' legal rights to forbid
+circumvention of technological measures.
+
+### 4. Conveying Verbatim Copies.
+
+You may convey verbatim copies of the Program's source code as you
+receive it, in any medium, provided that you conspicuously and
+appropriately publish on each copy an appropriate copyright notice;
+keep intact all notices stating that this License and any
+non-permissive terms added in accord with section 7 apply to the code;
+keep intact all notices of the absence of any warranty; and give all
+recipients a copy of this License along with the Program.
+
+You may charge any price or no price for each copy that you convey,
+and you may offer support or warranty protection for a fee.
+
+### 5. Conveying Modified Source Versions.
+
+You may convey a work based on the Program, or the modifications to
+produce it from the Program, in the form of source code under the
+terms of section 4, provided that you also meet all of these
+conditions:
+
+-   a) The work must carry prominent notices stating that you modified
+    it, and giving a relevant date.
+-   b) The work must carry prominent notices stating that it is
+    released under this License and any conditions added under
+    section 7. This requirement modifies the requirement in section 4
+    to "keep intact all notices".
+-   c) You must license the entire work, as a whole, under this
+    License to anyone who comes into possession of a copy. This
+    License will therefore apply, along with any applicable section 7
+    additional terms, to the whole of the work, and all its parts,
+    regardless of how they are packaged. This License gives no
+    permission to license the work in any other way, but it does not
+    invalidate such permission if you have separately received it.
+-   d) If the work has interactive user interfaces, each must display
+    Appropriate Legal Notices; however, if the Program has interactive
+    interfaces that do not display Appropriate Legal Notices, your
+    work need not make them do so.
+
+A compilation of a covered work with other separate and independent
+works, which are not by their nature extensions of the covered work,
+and which are not combined with it such as to form a larger program,
+in or on a volume of a storage or distribution medium, is called an
+"aggregate" if the compilation and its resulting copyright are not
+used to limit the access or legal rights of the compilation's users
+beyond what the individual works permit. Inclusion of a covered work
+in an aggregate does not cause this License to apply to the other
+parts of the aggregate.
+
+### 6. Conveying Non-Source Forms.
+
+You may convey a covered work in object code form under the terms of
+sections 4 and 5, provided that you also convey the machine-readable
+Corresponding Source under the terms of this License, in one of these
+ways:
+
+-   a) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by the
+    Corresponding Source fixed on a durable physical medium
+    customarily used for software interchange.
+-   b) Convey the object code in, or embodied in, a physical product
+    (including a physical distribution medium), accompanied by a
+    written offer, valid for at least three years and valid for as
+    long as you offer spare parts or customer support for that product
+    model, to give anyone who possesses the object code either (1) a
+    copy of the Corresponding Source for all the software in the
+    product that is covered by this License, on a durable physical
+    medium customarily used for software interchange, for a price no
+    more than your reasonable cost of physically performing this
+    conveying of source, or (2) access to copy the Corresponding
+    Source from a network server at no charge.
+-   c) Convey individual copies of the object code with a copy of the
+    written offer to provide the Corresponding Source. This
+    alternative is allowed only occasionally and noncommercially, and
+    only if you received the object code with such an offer, in accord
+    with subsection 6b.
+-   d) Convey the object code by offering access from a designated
+    place (gratis or for a charge), and offer equivalent access to the
+    Corresponding Source in the same way through the same place at no
+    further charge. You need not require recipients to copy the
+    Corresponding Source along with the object code. If the place to
+    copy the object code is a network server, the Corresponding Source
+    may be on a different server (operated by you or a third party)
+    that supports equivalent copying facilities, provided you maintain
+    clear directions next to the object code saying where to find the
+    Corresponding Source. Regardless of what server hosts the
+    Corresponding Source, you remain obligated to ensure that it is
+    available for as long as needed to satisfy these requirements.
+-   e) Convey the object code using peer-to-peer transmission,
+    provided you inform other peers where the object code and
+    Corresponding Source of the work are being offered to the general
+    public at no charge under subsection 6d.
+
+A separable portion of the object code, whose source code is excluded
+from the Corresponding Source as a System Library, need not be
+included in conveying the object code work.
+
+A "User Product" is either (1) a "consumer product", which means any
+tangible personal property which is normally used for personal,
+family, or household purposes, or (2) anything designed or sold for
+incorporation into a dwelling. In determining whether a product is a
+consumer product, doubtful cases shall be resolved in favor of
+coverage. For a particular product received by a particular user,
+"normally used" refers to a typical or common use of that class of
+product, regardless of the status of the particular user or of the way
+in which the particular user actually uses, or expects or is expected
+to use, the product. A product is a consumer product regardless of
+whether the product has substantial commercial, industrial or
+non-consumer uses, unless such uses represent the only significant
+mode of use of the product.
+
+"Installation Information" for a User Product means any methods,
+procedures, authorization keys, or other information required to
+install and execute modified versions of a covered work in that User
+Product from a modified version of its Corresponding Source. The
+information must suffice to ensure that the continued functioning of
+the modified object code is in no case prevented or interfered with
+solely because modification has been made.
+
+If you convey an object code work under this section in, or with, or
+specifically for use in, a User Product, and the conveying occurs as
+part of a transaction in which the right of possession and use of the
+User Product is transferred to the recipient in perpetuity or for a
+fixed term (regardless of how the transaction is characterized), the
+Corresponding Source conveyed under this section must be accompanied
+by the Installation Information. But this requirement does not apply
+if neither you nor any third party retains the ability to install
+modified object code on the User Product (for example, the work has
+been installed in ROM).
+
+The requirement to provide Installation Information does not include a
+requirement to continue to provide support service, warranty, or
+updates for a work that has been modified or installed by the
+recipient, or for the User Product in which it has been modified or
+installed. Access to a network may be denied when the modification
+itself materially and adversely affects the operation of the network
+or violates the rules and protocols for communication across the
+network.
+
+Corresponding Source conveyed, and Installation Information provided,
+in accord with this section must be in a format that is publicly
+documented (and with an implementation available to the public in
+source code form), and must require no special password or key for
+unpacking, reading or copying.
+
+### 7. Additional Terms.
+
+"Additional permissions" are terms that supplement the terms of this
+License by making exceptions from one or more of its conditions.
+Additional permissions that are applicable to the entire Program shall
+be treated as though they were included in this License, to the extent
+that they are valid under applicable law. If additional permissions
+apply only to part of the Program, that part may be used separately
+under those permissions, but the entire Program remains governed by
+this License without regard to the additional permissions.
+
+When you convey a copy of a covered work, you may at your option
+remove any additional permissions from that copy, or from any part of
+it. (Additional permissions may be written to require their own
+removal in certain cases when you modify the work.) You may place
+additional permissions on material, added by you to a covered work,
+for which you have or can give appropriate copyright permission.
+
+Notwithstanding any other provision of this License, for material you
+add to a covered work, you may (if authorized by the copyright holders
+of that material) supplement the terms of this License with terms:
+
+-   a) Disclaiming warranty or limiting liability differently from the
+    terms of sections 15 and 16 of this License; or
+-   b) Requiring preservation of specified reasonable legal notices or
+    author attributions in that material or in the Appropriate Legal
+    Notices displayed by works containing it; or
+-   c) Prohibiting misrepresentation of the origin of that material,
+    or requiring that modified versions of such material be marked in
+    reasonable ways as different from the original version; or
+-   d) Limiting the use for publicity purposes of names of licensors
+    or authors of the material; or
+-   e) Declining to grant rights under trademark law for use of some
+    trade names, trademarks, or service marks; or
+-   f) Requiring indemnification of licensors and authors of that
+    material by anyone who conveys the material (or modified versions
+    of it) with contractual assumptions of liability to the recipient,
+    for any liability that these contractual assumptions directly
+    impose on those licensors and authors.
+
+All other non-permissive additional terms are considered "further
+restrictions" within the meaning of section 10. If the Program as you
+received it, or any part of it, contains a notice stating that it is
+governed by this License along with a term that is a further
+restriction, you may remove that term. If a license document contains
+a further restriction but permits relicensing or conveying under this
+License, you may add to a covered work material governed by the terms
+of that license document, provided that the further restriction does
+not survive such relicensing or conveying.
+
+If you add terms to a covered work in accord with this section, you
+must place, in the relevant source files, a statement of the
+additional terms that apply to those files, or a notice indicating
+where to find the applicable terms.
+
+Additional terms, permissive or non-permissive, may be stated in the
+form of a separately written license, or stated as exceptions; the
+above requirements apply either way.
+
+### 8. Termination.
+
+You may not propagate or modify a covered work except as expressly
+provided under this License. Any attempt otherwise to propagate or
+modify it is void, and will automatically terminate your rights under
+this License (including any patent licenses granted under the third
+paragraph of section 11).
+
+However, if you cease all violation of this License, then your license
+from a particular copyright holder is reinstated (a) provisionally,
+unless and until the copyright holder explicitly and finally
+terminates your license, and (b) permanently, if the copyright holder
+fails to notify you of the violation by some reasonable means prior to
+60 days after the cessation.
+
+Moreover, your license from a particular copyright holder is
+reinstated permanently if the copyright holder notifies you of the
+violation by some reasonable means, this is the first time you have
+received notice of violation of this License (for any work) from that
+copyright holder, and you cure the violation prior to 30 days after
+your receipt of the notice.
+
+Termination of your rights under this section does not terminate the
+licenses of parties who have received copies or rights from you under
+this License. If your rights have been terminated and not permanently
+reinstated, you do not qualify to receive new licenses for the same
+material under section 10.
+
+### 9. Acceptance Not Required for Having Copies.
+
+You are not required to accept this License in order to receive or run
+a copy of the Program. Ancillary propagation of a covered work
+occurring solely as a consequence of using peer-to-peer transmission
+to receive a copy likewise does not require acceptance. However,
+nothing other than this License grants you permission to propagate or
+modify any covered work. These actions infringe copyright if you do
+not accept this License. Therefore, by modifying or propagating a
+covered work, you indicate your acceptance of this License to do so.
+
+### 10. Automatic Licensing of Downstream Recipients.
+
+Each time you convey a covered work, the recipient automatically
+receives a license from the original licensors, to run, modify and
+propagate that work, subject to this License. You are not responsible
+for enforcing compliance by third parties with this License.
+
+An "entity transaction" is a transaction transferring control of an
+organization, or substantially all assets of one, or subdividing an
+organization, or merging organizations. If propagation of a covered
+work results from an entity transaction, each party to that
+transaction who receives a copy of the work also receives whatever
+licenses to the work the party's predecessor in interest had or could
+give under the previous paragraph, plus a right to possession of the
+Corresponding Source of the work from the predecessor in interest, if
+the predecessor has it or can get it with reasonable efforts.
+
+You may not impose any further restrictions on the exercise of the
+rights granted or affirmed under this License. For example, you may
+not impose a license fee, royalty, or other charge for exercise of
+rights granted under this License, and you may not initiate litigation
+(including a cross-claim or counterclaim in a lawsuit) alleging that
+any patent claim is infringed by making, using, selling, offering for
+sale, or importing the Program or any portion of it.
+
+### 11. Patents.
+
+A "contributor" is a copyright holder who authorizes use under this
+License of the Program or a work on which the Program is based. The
+work thus licensed is called the contributor's "contributor version".
+
+A contributor's "essential patent claims" are all patent claims owned
+or controlled by the contributor, whether already acquired or
+hereafter acquired, that would be infringed by some manner, permitted
+by this License, of making, using, or selling its contributor version,
+but do not include claims that would be infringed only as a
+consequence of further modification of the contributor version. For
+purposes of this definition, "control" includes the right to grant
+patent sublicenses in a manner consistent with the requirements of
+this License.
+
+Each contributor grants you a non-exclusive, worldwide, royalty-free
+patent license under the contributor's essential patent claims, to
+make, use, sell, offer for sale, import and otherwise run, modify and
+propagate the contents of its contributor version.
+
+In the following three paragraphs, a "patent license" is any express
+agreement or commitment, however denominated, not to enforce a patent
+(such as an express permission to practice a patent or covenant not to
+sue for patent infringement). To "grant" such a patent license to a
+party means to make such an agreement or commitment not to enforce a
+patent against the party.
+
+If you convey a covered work, knowingly relying on a patent license,
+and the Corresponding Source of the work is not available for anyone
+to copy, free of charge and under the terms of this License, through a
+publicly available network server or other readily accessible means,
+then you must either (1) cause the Corresponding Source to be so
+available, or (2) arrange to deprive yourself of the benefit of the
+patent license for this particular work, or (3) arrange, in a manner
+consistent with the requirements of this License, to extend the patent
+license to downstream recipients. "Knowingly relying" means you have
+actual knowledge that, but for the patent license, your conveying the
+covered work in a country, or your recipient's use of the covered work
+in a country, would infringe one or more identifiable patents in that
+country that you have reason to believe are valid.
+
+If, pursuant to or in connection with a single transaction or
+arrangement, you convey, or propagate by procuring conveyance of, a
+covered work, and grant a patent license to some of the parties
+receiving the covered work authorizing them to use, propagate, modify
+or convey a specific copy of the covered work, then the patent license
+you grant is automatically extended to all recipients of the covered
+work and works based on it.
+
+A patent license is "discriminatory" if it does not include within the
+scope of its coverage, prohibits the exercise of, or is conditioned on
+the non-exercise of one or more of the rights that are specifically
+granted under this License. You may not convey a covered work if you
+are a party to an arrangement with a third party that is in the
+business of distributing software, under which you make payment to the
+third party based on the extent of your activity of conveying the
+work, and under which the third party grants, to any of the parties
+who would receive the covered work from you, a discriminatory patent
+license (a) in connection with copies of the covered work conveyed by
+you (or copies made from those copies), or (b) primarily for and in
+connection with specific products or compilations that contain the
+covered work, unless you entered into that arrangement, or that patent
+license was granted, prior to 28 March 2007.
+
+Nothing in this License shall be construed as excluding or limiting
+any implied license or other defenses to infringement that may
+otherwise be available to you under applicable patent law.
+
+### 12. No Surrender of Others' Freedom.
+
+If conditions are imposed on you (whether by court order, agreement or
+otherwise) that contradict the conditions of this License, they do not
+excuse you from the conditions of this License. If you cannot convey a
+covered work so as to satisfy simultaneously your obligations under
+this License and any other pertinent obligations, then as a
+consequence you may not convey it at all. For example, if you agree to
+terms that obligate you to collect a royalty for further conveying
+from those to whom you convey the Program, the only way you could
+satisfy both those terms and this License would be to refrain entirely
+from conveying the Program.
+
+### 13. Use with the GNU Affero General Public License.
+
+Notwithstanding any other provision of this License, you have
+permission to link or combine any covered work with a work licensed
+under version 3 of the GNU Affero General Public License into a single
+combined work, and to convey the resulting work. The terms of this
+License will continue to apply to the part which is the covered work,
+but the special requirements of the GNU Affero General Public License,
+section 13, concerning interaction through a network will apply to the
+combination as such.
+
+### 14. Revised Versions of this License.
+
+The Free Software Foundation may publish revised and/or new versions
+of the GNU General Public License from time to time. Such new versions
+will be similar in spirit to the present version, but may differ in
+detail to address new problems or concerns.
+
+Each version is given a distinguishing version number. If the Program
+specifies that a certain numbered version of the GNU General Public
+License "or any later version" applies to it, you have the option of
+following the terms and conditions either of that numbered version or
+of any later version published by the Free Software Foundation. If the
+Program does not specify a version number of the GNU General Public
+License, you may choose any version ever published by the Free
+Software Foundation.
+
+If the Program specifies that a proxy can decide which future versions
+of the GNU General Public License can be used, that proxy's public
+statement of acceptance of a version permanently authorizes you to
+choose that version for the Program.
+
+Later license versions may give you additional or different
+permissions. However, no additional obligations are imposed on any
+author or copyright holder as a result of your choosing to follow a
+later version.
+
+### 15. Disclaimer of Warranty.
+
+THERE IS NO WARRANTY FOR THE PROGRAM, TO THE EXTENT PERMITTED BY
+APPLICABLE LAW. EXCEPT WHEN OTHERWISE STATED IN WRITING THE COPYRIGHT
+HOLDERS AND/OR OTHER PARTIES PROVIDE THE PROGRAM "AS IS" WITHOUT
+WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE. THE ENTIRE RISK AS TO THE QUALITY AND
+PERFORMANCE OF THE PROGRAM IS WITH YOU. SHOULD THE PROGRAM PROVE
+DEFECTIVE, YOU ASSUME THE COST OF ALL NECESSARY SERVICING, REPAIR OR
+CORRECTION.
+
+### 16. Limitation of Liability.
+
+IN NO EVENT UNLESS REQUIRED BY APPLICABLE LAW OR AGREED TO IN WRITING
+WILL ANY COPYRIGHT HOLDER, OR ANY OTHER PARTY WHO MODIFIES AND/OR
+CONVEYS THE PROGRAM AS PERMITTED ABOVE, BE LIABLE TO YOU FOR DAMAGES,
+INCLUDING ANY GENERAL, SPECIAL, INCIDENTAL OR CONSEQUENTIAL DAMAGES
+ARISING OUT OF THE USE OR INABILITY TO USE THE PROGRAM (INCLUDING BUT
+NOT LIMITED TO LOSS OF DATA OR DATA BEING RENDERED INACCURATE OR
+LOSSES SUSTAINED BY YOU OR THIRD PARTIES OR A FAILURE OF THE PROGRAM
+TO OPERATE WITH ANY OTHER PROGRAMS), EVEN IF SUCH HOLDER OR OTHER
+PARTY HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+
+### 17. Interpretation of Sections 15 and 16.
+
+If the disclaimer of warranty and limitation of liability provided
+above cannot be given local legal effect according to their terms,
+reviewing courts shall apply local law that most closely approximates
+an absolute waiver of all civil liability in connection with the
+Program, unless a warranty or assumption of liability accompanies a
+copy of the Program in return for a fee.
+
+END OF TERMS AND CONDITIONS
+
+## How to Apply These Terms to Your New Programs
+
+If you develop a new program, and you want it to be of the greatest
+possible use to the public, the best way to achieve this is to make it
+free software which everyone can redistribute and change under these
+terms.
+
+To do so, attach the following notices to the program. It is safest to
+attach them to the start of each source file to most effectively state
+the exclusion of warranty; and each file should have at least the
+"copyright" line and a pointer to where the full notice is found.
+
+        <one line to give the program's name and a brief idea of what it does.>
+        Copyright (C) <year>  <name of author>
+
+        This program is free software: you can redistribute it and/or modify
+        it under the terms of the GNU General Public License as published by
+        the Free Software Foundation, either version 3 of the License, or
+        (at your option) any later version.
+
+        This program is distributed in the hope that it will be useful,
+        but WITHOUT ANY WARRANTY; without even the implied warranty of
+        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+        GNU General Public License for more details.
+
+        You should have received a copy of the GNU General Public License
+        along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Also add information on how to contact you by electronic and paper
+mail.
+
+If the program does terminal interaction, make it output a short
+notice like this when it starts in an interactive mode:
+
+        <program>  Copyright (C) <year>  <name of author>
+        This program comes with ABSOLUTELY NO WARRANTY; for details type `show w'.
+        This is free software, and you are welcome to redistribute it
+        under certain conditions; type `show c' for details.
+
+The hypothetical commands \`show w' and \`show c' should show the
+appropriate parts of the General Public License. Of course, your
+program's commands might be different; for a GUI interface, you would
+use an "about box".
+
+You should also get your employer (if you work as a programmer) or
+school, if any, to sign a "copyright disclaimer" for the program, if
+necessary. For more information on this, and how to apply and follow
+the GNU GPL, see <https://www.gnu.org/licenses/>.
+
+The GNU General Public License does not permit incorporating your
+program into proprietary programs. If your program is a subroutine
+library, you may consider it more useful to permit linking proprietary
+applications with the library. If this is what you want to do, use the
+GNU Lesser General Public License instead of this License. But first,
+please read <https://www.gnu.org/licenses/why-not-lgpl.html>.
