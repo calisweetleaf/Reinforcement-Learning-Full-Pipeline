@@ -8,7 +8,7 @@
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=orange)
 
-![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blueviolet.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18607464.svg)](https://doi.org/10.5281/zenodo.18607464)
 
@@ -27,7 +27,7 @@
 </div>
 
 ---
-# March 3, 2026 Updates:
+# March 7, 2026 Updates:
 
 - Qwen3 1.7B using rlhf.py, full SFT on the MaggiePie 300k filtered dataset, full open weights are now public
 
@@ -41,6 +41,12 @@ https://huggingface.co/Somnus-Sovereign-Systems/qwen3-pinion-gguf
 **Ollama:**
 
 https://ollama.com/treyrowell1826/qwen3-pinion
+
+--
+
+# March 8, 2023 Updates:
+
+- All Operation/Toolkit-SOTA repo is dropping the Anti-Exploit LICENSE, and permanently changing to GPLv3. I realized that the barrier of the open community with engagement, collaboration, discussion rested upon the barrier the somnus-license introduced. By adopting now and permantenyly forward GPLv3 I am making the barrier of entry of the ecosystem now easy as it can be in order to start the public engagement, discussion, collaboration, or any other inquiries into the Somnus ecosystem. The want to give out useful software whether backend systems, routing, recursive researcher, over-weighs now the need to protect from the "algorithmic empire" I was gating against. The ideals and mission gains traction as this further decreases the value of their internal systems, thus loosening the restrictive hold on development they have.
 
 ---
 
@@ -62,7 +68,7 @@ As of March 2026, this pipeline has produced publicly released GGUF-quantized mo
 
 ## Mission
 
-The exclusive control over post-training infrastructure has allowed a few organizations to artificially monopolize AI capabilities. They claim innovation while simply gating access to standard reinforcement learning techniques. THIS REPOSITORY IS GOVERNED BY THE Sovereign Anti-Exploitation Software License
+The exclusive control over post-training infrastructure has allowed a few organizations to artificially monopolize AI capabilities. They claim innovation while simply gating access to standard reinforcement learning techniques. THIS REPOSITORY IS GOVERNED BY GPLv3 as of March 8, 2026.
 
 This repository dismantles that barrier. By open-sourcing the complete, unencumbered RLHF pipeline used by industry leaders, we aim to undercut the artificial scarcity of high-quality models. The goal is simple: put the reproduction of state-of-the-art capabilities directly into the hands of the open-source community, removing the reliance on closed-source APIs for model alignment.
 
