@@ -23,6 +23,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import sys
 import time
 import tracemalloc
 from pathlib import Path
@@ -40,12 +42,237 @@ from inference_optimizations import (
 )
 from telemetry import TelemetryRecorder
 
+try:
+    import resource
+except Exception:
+    resource = None
+
 logger = logging.getLogger("BenchmarkHarness")
 
 # =============================================================================
 # RESULT SCHEMA VERSION
 # =============================================================================
 SCHEMA_VERSION = "1.0"
+DEFAULT_BASE_MODEL = os.getenv("RLHF_BASE_MODEL", "Qwen/Qwen3-1.7B")
+DEFAULT_ADAPTER_PATH = os.getenv(
+    "RLHF_SFT_ADAPTER",
+    str(Path(__file__).resolve().parent / "checkpoints" / "checkpoints" / "full_pipeline" / "sft"),
+)
+DEFAULT_PROMPTS: List[str] = [
+    "Explain what reinforcement learning is in simple terms.",
+    "Write a Python function that computes Fibonacci numbers iteratively.",
+    "What are the practical differences between DPO and PPO for alignment?",
+    "Solve: If 3x + 7 = 22, what is x?",
+    "Summarize why LoRA is useful for low-memory fine-tuning.",
+]
+
+
+def _get_process_peak_rss_mb() -> float:
+    """
+    Return process peak RSS in MB when available, otherwise NaN.
+    Linux reports ru_maxrss in KiB, macOS reports bytes.
+    """
+    if resource is None:
+        return float("nan")
+    usage = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+    if usage <= 0:
+        return float("nan")
+    if sys.platform == "darwin":
+        return usage / (1024.0 * 1024.0)
+    return usage / 1024.0
+
+
+def _resolve_path_or_id(value: Optional[str]) -> Optional[str]:
+    """Resolve local paths to absolute strings while preserving hub IDs."""
+    if not value:
+        return None
+    candidate = Path(value).expanduser()
+    if candidate.exists():
+        return str(candidate.resolve())
+    return value
+
+
+def _parse_dtype(dtype_name: str) -> Optional[torch.dtype]:
+    """Map CLI dtype string to torch dtype."""
+    mapping = {
+        "auto": None,
+        "float32": torch.float32,
+        "float16": torch.float16,
+        "bfloat16": torch.bfloat16,
+    }
+    if dtype_name not in mapping:
+        raise ValueError(f"Unsupported dtype '{dtype_name}'. Use one of: {', '.join(mapping.keys())}")
+    return mapping[dtype_name]
+
+
+def _profile_default_bon_strategies(profile_name: str) -> List[str]:
+    """Select default Best-of-N strategy set for each budget profile."""
+    if profile_name == "tiny_cpu":
+        return ["bon_n2", "bon_n4"]
+    if profile_name == "balanced_cpu":
+        return ["bon_n4", "bon_n8"]
+    if profile_name == "gpu_lowlatency":
+        return ["bon_n8", "bon_n12", "bon_n16"]
+    if profile_name == "gpu_maxquality":
+        return ["bon_n8", "bon_n16", "bon_n24"]
+    return ["bon_n4", "bon_n8", "bon_n16"]
+
+
+def _load_prompts(prompts_file: Optional[str], max_prompts: int = 8) -> List[str]:
+    """
+    Load prompts from txt/json/jsonl file, or return built-in defaults.
+    JSON can be:
+      - list[str]
+      - list[{"prompt": "..."}]
+      - {"prompts": [...]}
+    """
+    prompts: List[str] = []
+    if prompts_file:
+        path = Path(prompts_file).expanduser().resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Prompts file not found: {path}")
+        suffix = path.suffix.lower()
+
+        if suffix == ".txt":
+            prompts = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        elif suffix == ".jsonl":
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                item = json.loads(line)
+                if isinstance(item, str):
+                    prompts.append(item)
+                elif isinstance(item, dict):
+                    val = item.get("prompt") or item.get("text")
+                    if isinstance(val, str) and val.strip():
+                        prompts.append(val.strip())
+        elif suffix == ".json":
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                payload = payload.get("prompts", [])
+            if isinstance(payload, list):
+                for item in payload:
+                    if isinstance(item, str) and item.strip():
+                        prompts.append(item.strip())
+                    elif isinstance(item, dict):
+                        val = item.get("prompt") or item.get("text")
+                        if isinstance(val, str) and val.strip():
+                            prompts.append(val.strip())
+        else:
+            raise ValueError(
+                f"Unsupported prompts file extension '{suffix}'. Use .txt, .json, or .jsonl"
+            )
+    else:
+        prompts = list(DEFAULT_PROMPTS)
+
+    prompts = prompts[:max(1, max_prompts)]
+    if not prompts:
+        raise ValueError("No prompts loaded. Provide a non-empty prompts file or omit --prompts-file.")
+    return prompts
+
+
+class HeuristicRewardScorer:
+    """
+    Lightweight fallback reward scorer for benchmarking when no reward model is provided.
+    Emphasizes coherent, non-repetitive completions with moderate length.
+    """
+
+    @staticmethod
+    def _repeat_ratio(text: str) -> float:
+        tokens = text.split()
+        if len(tokens) < 3:
+            return 0.0
+        trigrams = [tuple(tokens[i:i + 3]) for i in range(len(tokens) - 2)]
+        unique = len(set(trigrams))
+        return 1.0 - (unique / max(1, len(trigrams)))
+
+    def score(self, prompt: str, completion: str = "") -> float:
+        text = completion.strip() if completion else prompt.strip()
+        if not text:
+            return 0.0
+        n_tokens = len(text.split())
+        length_term = min(n_tokens / 96.0, 1.0)
+        repeat_penalty = self._repeat_ratio(text)
+        punctuation_bonus = 0.05 if text.endswith((".", "!", "?")) else 0.0
+        return float(length_term - 0.5 * repeat_penalty + punctuation_bonus)
+
+    def score_batch(self, texts: List[str]) -> List[float]:
+        return [self.score(t) for t in texts]
+
+
+def load_policy_with_optional_adapter(
+    base_model: str,
+    adapter_path: Optional[str] = None,
+    merged_model_path: Optional[str] = None,
+    merge_lora: bool = False,
+    device: str = "cpu",
+    dtype: str = "float32",
+    trust_remote_code: bool = True,
+) -> Tuple[nn.Module, Any]:
+    """
+    Load a policy model + tokenizer from:
+      1) merged model path, OR
+      2) base model + optional LoRA adapter path.
+    """
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    resolved_merged = _resolve_path_or_id(merged_model_path)
+    resolved_adapter = _resolve_path_or_id(adapter_path)
+    resolved_base = _resolve_path_or_id(base_model) or base_model
+    torch_dtype = _parse_dtype(dtype)
+    load_kwargs = {
+        "low_cpu_mem_usage": True,
+        "trust_remote_code": trust_remote_code,
+    }
+    if torch_dtype is not None:
+        load_kwargs["dtype"] = torch_dtype
+
+    # Prefer tokenizer colocated with adapter/merged artifact if present
+    tokenizer_source = resolved_merged or resolved_adapter or resolved_base
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_source, trust_remote_code=trust_remote_code)
+
+    if resolved_merged:
+        logger.info(f"Loading merged policy model from: {resolved_merged}")
+        try:
+            model = AutoModelForCausalLM.from_pretrained(resolved_merged, **load_kwargs)
+        except TypeError:
+            # Backward compatibility with older transformers versions
+            legacy_kwargs = dict(load_kwargs)
+            legacy_kwargs.pop("dtype", None)
+            if torch_dtype is not None:
+                legacy_kwargs["torch_dtype"] = torch_dtype
+            model = AutoModelForCausalLM.from_pretrained(resolved_merged, **legacy_kwargs)
+    else:
+        logger.info(f"Loading base policy model: {resolved_base}")
+        try:
+            model = AutoModelForCausalLM.from_pretrained(resolved_base, **load_kwargs)
+        except TypeError:
+            legacy_kwargs = dict(load_kwargs)
+            legacy_kwargs.pop("dtype", None)
+            if torch_dtype is not None:
+                legacy_kwargs["torch_dtype"] = torch_dtype
+            model = AutoModelForCausalLM.from_pretrained(resolved_base, **legacy_kwargs)
+
+        if resolved_adapter:
+            try:
+                from peft import PeftModel
+            except Exception as exc:
+                raise RuntimeError(
+                    "Adapter path provided but peft is not installed. "
+                    "Install `peft` or provide --merged-model-path."
+                ) from exc
+
+            logger.info(f"Applying adapter from: {resolved_adapter}")
+            model = PeftModel.from_pretrained(model, resolved_adapter)
+            if merge_lora:
+                logger.info("Merging adapter into base weights (merge_and_unload).")
+                model = model.merge_and_unload()
+            else:
+                logger.info("Keeping adapter as PEFT wrapper (no merge_and_unload).")
+
+    model = model.to(device)
+    model.eval()
+    return model, tokenizer
 
 
 # =============================================================================
@@ -107,13 +334,17 @@ class BenchmarkHarness:
                 merge_cfg = MergeConfig(**cfg_kwargs)
                 merger = ModelMerger(merge_cfg)
 
-                # Measure time + RSS
+                # Measure time + memory
                 tracemalloc.start()
                 t0 = time.perf_counter()
                 merged = merger.merge(base_model, effective_ft, merge_cfg)
                 wall_time = time.perf_counter() - t0
                 _, peak_mem = tracemalloc.get_traced_memory()
                 tracemalloc.stop()
+                peak_python_alloc_mb = peak_mem / 1024 / 1024
+                peak_rss_mb = _get_process_peak_rss_mb()
+                if peak_rss_mb != peak_rss_mb:  # NaN fallback
+                    peak_rss_mb = peak_python_alloc_mb
 
                 # Conflict report
                 base_state = base_model.state_dict()
@@ -134,7 +365,8 @@ class BenchmarkHarness:
                 results[strategy] = {
                     "strategy": strategy,
                     "wall_time_s": wall_time,
-                    "peak_rss_mb": peak_mem / 1024 / 1024,
+                    "peak_rss_mb": peak_rss_mb,
+                    "peak_python_alloc_mb": peak_python_alloc_mb,
                     "eval_score": eval_score,
                     "conflict_summary": {
                         "mean_cosine_conflict": mean_cosine,
@@ -163,6 +395,7 @@ class BenchmarkHarness:
         strategies: Optional[List[str]] = None,
         bon_config: Optional[BestOfNConfig] = None,
         mcts_config: Optional[MCTSConfig] = None,
+        max_new_tokens: int = 128,
     ) -> Dict[str, Dict]:
         """
         Benchmark Best-of-N sampling across different n_samples settings.
@@ -194,24 +427,25 @@ class BenchmarkHarness:
                 except ValueError:
                     pass
 
-            cfg = BestOfNConfig(
-                n_samples=n_samples,
-                temperature=base_cfg.temperature,
-                top_p=base_cfg.top_p,
-                reward_aggregation=base_cfg.reward_aggregation,
-                use_diversity_bonus=base_cfg.use_diversity_bonus,
-                diversity_weight=base_cfg.diversity_weight,
-            )
+            cfg_dict = vars(base_cfg).copy()
+            cfg_dict["n_samples"] = n_samples
+            cfg = BestOfNConfig(**cfg_dict)
             sampler = BestOfNSampler(policy, reward, config=cfg, tokenizer=tokenizer)
+            logger.info(
+                f"[inference_benchmark] strategy={strategy} n_samples={n_samples} prompts={len(prompts)}"
+            )
 
             latencies = []
             reward_scores = []
             total_tokens = 0
 
-            for prompt in prompts:
+            for idx, prompt in enumerate(prompts, start=1):
+                logger.info(
+                    f"[inference_benchmark] strategy={strategy} prompt={idx}/{len(prompts)}"
+                )
                 t0 = time.perf_counter()
                 try:
-                    result = sampler.generate(prompt, tokenizer, max_new_tokens=128)
+                    result = sampler.generate(prompt, tokenizer, max_new_tokens=max_new_tokens)
                     lat = time.perf_counter() - t0
                     latencies.append(lat)
                     rec.record_latency(strategy, lat)
@@ -226,20 +460,93 @@ class BenchmarkHarness:
 
             snap = rec.snapshot()
             lat_stats = snap["latency"].get(strategy, {})
+            total_latency_s = sum(latencies)
+            tokens_per_sec = (
+                total_tokens / total_latency_s
+                if total_latency_s > 0
+                else float("nan")
+            )
 
             results[strategy] = {
                 "strategy": strategy,
                 "n_samples": n_samples,
                 "n_prompts": len(prompts),
+                "n_success": len(latencies),
                 "latency_p50_s": lat_stats.get("p50_s", float("nan")),
                 "latency_p95_s": lat_stats.get("p95_s", float("nan")),
                 "mean_latency_s": lat_stats.get("mean_s", float("nan")),
                 "total_tokens": total_tokens,
+                "tokens_per_sec": tokens_per_sec,
                 "reward_score_mean": (
                     sum(reward_scores) / len(reward_scores) if reward_scores else float("nan")
                 ),
             }
         return results
+
+    def run_checkpoint_inference_benchmark(
+        self,
+        base_model: str = DEFAULT_BASE_MODEL,
+        adapter_path: Optional[str] = DEFAULT_ADAPTER_PATH,
+        merged_model_path: Optional[str] = None,
+        prompts: Optional[List[str]] = None,
+        profile_name: Optional[str] = None,
+        bon_config: Optional[BestOfNConfig] = None,
+        strategies: Optional[List[str]] = None,
+        max_new_tokens: int = 128,
+        merge_lora: bool = False,
+        device: str = "cpu",
+        dtype: str = "float32",
+    ) -> Dict[str, Any]:
+        """
+        End-to-end checkpoint benchmark:
+          load model/tokenizer -> run Best-of-N strategy sweep -> rank + summarize.
+        """
+        policy, tokenizer = load_policy_with_optional_adapter(
+            base_model=base_model,
+            adapter_path=adapter_path,
+            merged_model_path=merged_model_path,
+            merge_lora=merge_lora,
+            device=device,
+            dtype=dtype,
+        )
+
+        reward = HeuristicRewardScorer()
+        active_profile = profile_name or "custom"
+        active_strategies = strategies or _profile_default_bon_strategies(active_profile)
+        active_prompts = prompts or list(DEFAULT_PROMPTS)
+        active_bon = bon_config or BestOfNConfig()
+
+        bench_results = self.run_inference_benchmark(
+            policy=policy,
+            reward=reward,
+            prompts=active_prompts,
+            tokenizer=tokenizer,
+            strategies=active_strategies,
+            bon_config=active_bon,
+            max_new_tokens=max_new_tokens,
+        )
+
+        quality_rank = self.rank_strategies(
+            bench_results, objective="reward_score_mean", higher_is_better=True
+        )
+        latency_rank = self.rank_strategies(
+            bench_results, objective="latency_p95_s", higher_is_better=False
+        )
+
+        recommended = quality_rank[0] if quality_rank else None
+
+        return {
+            "profile": active_profile,
+            "strategies": active_strategies,
+            "prompts_evaluated": len(active_prompts),
+            "max_new_tokens": max_new_tokens,
+            "recommendation": {
+                "best_quality": recommended,
+                "quality_ranking": quality_rank,
+                "latency_ranking": latency_rank,
+            },
+            "results": bench_results,
+        }
 
     # ------------------------------------------------------------------
     # Ranking
@@ -334,6 +641,7 @@ class BudgetProfileSelector:
     def __init__(self, history_path: Optional[str] = None):
         self._history_path = history_path
         self._history: Optional[Dict] = None
+        self.last_selected_profile: Optional[str] = None
         if history_path and Path(history_path).exists():
             with open(history_path) as f:
                 self._history = json.load(f)
@@ -341,6 +649,7 @@ class BudgetProfileSelector:
     def select(
         self,
         constraints: Dict[str, Any],
+        profile_override: Optional[str] = None,
     ) -> Tuple[MergeConfig, BestOfNConfig, MCTSConfig, SpeculativeDecoderConfig]:
         """
         Select configs based on constraints dict.
@@ -350,16 +659,26 @@ class BudgetProfileSelector:
             has_gpu          — bool (default: False)
             latency_budget_ms — target latency in ms (default: 1000)
             quality_priority — bool, prefer quality over speed (default: False)
+            profile_override — force a specific profile name when not None
 
         Returns:
             (MergeConfig, BestOfNConfig, MCTSConfig, SpeculativeDecoderConfig)
         """
-        profile_name = self._pick_profile(constraints)
-        logger.info(f"BudgetProfileSelector: selected profile '{profile_name}'")
+        if profile_override is not None:
+            if profile_override not in _PROFILES:
+                raise ValueError(
+                    f"Unknown profile_override='{profile_override}'. "
+                    f"Available: {', '.join(self.list_profiles())}"
+                )
+            profile_name = profile_override
+        else:
+            profile_name = self._pick_profile(constraints)
 
         # If history available, try to refine from empirical data
-        if self._history is not None:
+        if self._history is not None and profile_override is None:
             profile_name = self._refine_from_history(profile_name, constraints)
+        self.last_selected_profile = profile_name
+        logger.info(f"BudgetProfileSelector: selected profile '{profile_name}'")
 
         profile = _PROFILES[profile_name]
 
@@ -492,13 +811,49 @@ def _cli():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     parser = argparse.ArgumentParser(description="RLHF Benchmark Harness")
-    parser.add_argument("--profile", choices=BudgetProfileSelector.list_profiles(),
-                        default="tiny_cpu", help="Budget profile to select")
+    parser.add_argument(
+        "--mode",
+        choices=["profile", "inference"],
+        default="profile",
+        help="`profile` emits selected configs only; `inference` runs checkpoint-backed benchmark.",
+    )
+    profile_choices = ["auto"] + BudgetProfileSelector.list_profiles()
+    parser.add_argument(
+        "--profile",
+        choices=profile_choices,
+        default="auto",
+        help="Budget profile to select (or 'auto' to infer from constraints)",
+    )
     parser.add_argument("--output", default="bench.json", help="Output JSON path")
     parser.add_argument("--max-ram-gb", type=float, default=8)
     parser.add_argument("--has-gpu", action="store_true")
     parser.add_argument("--latency-budget-ms", type=float, default=1000)
     parser.add_argument("--quality-priority", action="store_true")
+    parser.add_argument("--base-model", default=DEFAULT_BASE_MODEL, help="Base model id/path")
+    parser.add_argument("--adapter-path", default=DEFAULT_ADAPTER_PATH, help="LoRA adapter path/id")
+    parser.add_argument("--merged-model-path", default="", help="Optional merged model path/id")
+    parser.add_argument("--prompts-file", default="", help="Optional prompts file (.txt/.json/.jsonl)")
+    parser.add_argument("--max-prompts", type=int, default=5)
+    parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--dtype", choices=["auto", "float32", "float16", "bfloat16"], default="float32")
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--merge-lora",
+        action="store_true",
+        help="Explicitly merge adapter into base weights (can be slow on CPU).",
+    )
+    # Backward-compatible no-op for older command examples.
+    parser.add_argument(
+        "--no-merge-lora",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--strategies",
+        nargs="*",
+        default=None,
+        help="Optional inference strategies override, e.g. bon_n4 bon_n8 bon_n16",
+    )
     args = parser.parse_args()
 
     selector = BudgetProfileSelector()
@@ -508,11 +863,18 @@ def _cli():
         "latency_budget_ms": args.latency_budget_ms,
         "quality_priority": args.quality_priority,
     }
-    merge_cfg, bon_cfg, mcts_cfg, spec_cfg = selector.select(constraints)
+    profile_override = None if args.profile == "auto" else args.profile
+    merge_cfg, bon_cfg, mcts_cfg, spec_cfg = selector.select(
+        constraints,
+        profile_override=profile_override,
+    )
+    selected_profile = selector.last_selected_profile or args.profile
 
-    report = {
+    base_report = {
         "schema_version": SCHEMA_VERSION,
-        "profile": args.profile,
+        "mode": args.mode,
+        "profile": selected_profile,
+        "requested_profile": args.profile,
         "constraints": constraints,
         "selected_configs": {
             "merge": {
@@ -538,15 +900,44 @@ def _cli():
         },
     }
 
+    report = dict(base_report)
+
+    if args.mode == "inference":
+        merge_lora = (args.merge_lora and not args.no_merge_lora)
+        if not merge_lora:
+            logger.info(
+                "Adapter merge is disabled (default) to avoid long CPU stalls. "
+                "Pass --merge-lora to force merge_and_unload."
+            )
+        prompts = _load_prompts(args.prompts_file or None, max_prompts=args.max_prompts)
+        harness = BenchmarkHarness()
+        inference_summary = harness.run_checkpoint_inference_benchmark(
+            base_model=args.base_model,
+            adapter_path=(args.adapter_path or None),
+            merged_model_path=(args.merged_model_path or None),
+            prompts=prompts,
+            profile_name=selected_profile,
+            bon_config=bon_cfg,
+            strategies=args.strategies,
+            max_new_tokens=args.max_new_tokens,
+            merge_lora=merge_lora,
+            device=args.device,
+            dtype=args.dtype,
+        )
+        report["inference_benchmark"] = inference_summary
+
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     with open(args.output, "w") as f:
         json.dump(report, f, indent=2)
 
-    print(f"Profile '{args.profile}' selected.")
+    print(f"Profile '{selected_profile}' selected (requested='{args.profile}').")
     print(f"Merge method : {merge_cfg.method}")
     print(f"Best-of-N n  : {bon_cfg.n_samples}")
     print(f"MCTS sims    : {mcts_cfg.n_simulations}")
     print(f"Spec gamma   : {spec_cfg.gamma} (max {spec_cfg.gamma_max})")
+    if args.mode == "inference":
+        rec = report.get("inference_benchmark", {}).get("recommendation", {})
+        print(f"Best quality strategy: {rec.get('best_quality')}")
     print(f"Report written to: {args.output}")
 
 
