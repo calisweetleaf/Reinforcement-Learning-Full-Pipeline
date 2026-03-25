@@ -8,7 +8,7 @@
 
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=orange)
 
-![License](https://img.shields.io/badge/License-Sovereign-blueviolet?style=for-the-badge)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blueviolet?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18607464.svg)](https://doi.org/10.5281/zenodo.18607464)
 
@@ -18,7 +18,7 @@
 
 <br/>
 
-[**Quick Start**](#quick-start) • [**Methods**](#rlhf-methods) • [**Features**](#features) • [**Architecture**](#architecture) • [**Benchmarks**](#method-comparison) • [**Validated Run**](#validated-training-run) • [**GGUF Releases**](#gguf-releases)
+[**Quick Start**](#quick-start) • [**Methods**](#rlhf-methods) • [**Features**](#features) • [**Architecture**](#architecture) • [**Research Lineage**](#research-lineage) • [**Validated Run**](#validated-training-run) • [**GGUF Releases**](#gguf-releases)
 
 <br/>
 </div>
@@ -27,9 +27,9 @@
 
 ## Overview
 
-This repository provides a production-grade implementation of the Reinforcement Learning from Human Feedback (RLHF) pipeline. It mirrors the post-training infrastructure used by major research labs, optimized for consumer hardware — including **CPU-only environments with zero GPU requirement**.
+This public GPLv3 repository provides a production-grade implementation of the Reinforcement Learning from Human Feedback (RLHF) pipeline together with its companion inference and systems modules. It mirrors the post-training infrastructure used by major research labs, optimized for consumer hardware, including **CPU-only environments with zero GPU requirement**.
 
-The codebase includes implementations of 7 distinct preference optimization algorithms (including PPO, DPO, SimPO, and DeepSeek's GRPO) alongside advanced inference techniques such as Monte Carlo Tree Search (MCTS) and Speculative Decoding. It is designed for researchers and developers who require full control over the alignment process without the constraints of commercial APIs or safety-filtered datasets.
+The codebase includes implementations of 7 distinct preference optimization algorithms alongside process reward modeling, verifier-guided search, and advanced inference techniques such as Monte Carlo Tree Search (MCTS), A* decoding, Best-of-N reranking, speculative decoding, and hidden-deliberation serving contracts. It is designed for researchers and developers who want full control over post-training and test-time compute behavior without relying on commercial APIs or opaque hosted tooling.
 
 As of March 2026, this pipeline has produced publicly released GGUF-quantized models trained entirely on consumer CPU hardware, demonstrating end-to-end viability from raw dataset to deployable artifact.
 
@@ -37,9 +37,9 @@ As of March 2026, this pipeline has produced publicly released GGUF-quantized mo
 
 ## Mission
 
-The exclusive control over post-training infrastructure has allowed a few organizations to artificially monopolize AI capabilities. They claim innovation while simply gating access to standard reinforcement learning techniques. THIS REPOSITORY IS GOVERNED BY THE Sovereign Anti-Exploitation Software License
+The exclusive control over post-training infrastructure has allowed a few organizations to artificially monopolize AI capabilities. They claim innovation while simply gating access to reinforcement learning, reward modeling, verifier-guided search, and test-time compute techniques. This repository is released under **GPLv3** so the stack can be studied, modified, reproduced, and extended in the open.
 
-This repository dismantles that barrier. By open-sourcing the complete, unencumbered RLHF pipeline used by industry leaders, we aim to undercut the artificial scarcity of high-quality models. The goal is simple: put the reproduction of state-of-the-art capabilities directly into the hands of the open-source community, removing the reliance on closed-source APIs for model alignment.
+This repository dismantles that barrier. By open-sourcing a complete RLHF runtime plus its surrounding inference, search, telemetry, and merge/export surfaces, the goal is to put reproduction of high-end post-training capability directly into the hands of the open-source community and reduce reliance on closed-source alignment and reasoning stacks.
 
 ---
 
@@ -47,7 +47,7 @@ This repository dismantles that barrier. By open-sourcing the complete, unencumb
 
 ```bash
 # Clone and setup
-git clone https://github.com/yourusername/Full-RLHF-Pipeline.git
+git clone https://github.com/calisweetleaf/Reinforcement-Learning-Full-Pipeline.git
 cd Full-RLHF-Pipeline
 
 # Create environment
@@ -101,18 +101,19 @@ python scripts/train_qwen3_1.7b.py --method dpo --epochs 3 --device cuda
 | Component | Capabilities |
 |:---|:---|
 | **Optimization Algorithms** | PPO, DPO, GRPO, SimPO, KTO, IPO, Self-Play |
-| **Inference Engine** | Flash Attention 2, Speculative Decoding, MCTS, Best-of-N Sampling |
+| **Inference Engine** | Flash Attention 2, Speculative Decoding, MCTS, A* Search, Best-of-N Sampling, hidden-deliberation serving |
 | **Training Efficiency** | LoRA/QLoRA (4-bit/8-bit), Gradient Checkpointing, Torch Compile |
 | **Model Merging** | TIES-Merging, SLERP, Task Arithmetic, DARE, Fisher-Weighted, RegMean, Geometric Mean, Sign Consensus, Model Soups |
 | **GGUF Export** | Post-merge quantization pipeline: F16, Q8_0, Q5_K_M, Q4_K_M (default), Q3_K_M and additional variants |
 | **Telemetry** | Thread-safe metrics sink — latency histograms (p50/p95/p99), token throughput, KV-cache hit/miss, MCTS expansion counters, speculative acceptance rates, TensorBoard adapter, JSON snapshot emit |
 | **Benchmark Harness** | Standardized eval matrix for merge strategies and inference presets, budget-aware profile selector (tiny_cpu / balanced_cpu / gpu_lowlatency / gpu_maxquality), regression gate for CI promotion gating |
 | **Inference Protocols** | Protocol-based adapter layer decoupling `PolicyAdapter`, `RewardScorerAdapter`, `ValueScorerAdapter` from ad-hoc model attributes — no assumed `.device` or `.score_text` |
+| **Process Supervision** | `ProcessRewardModel`, `ProcessRewardModelTrainer`, and PRM-aware reranking / reward blending for step-sensitive reasoning workflows |
 | **CPU-Only Support** | Full SFT training, LoRA adapter training, and model merging validated on CPU hardware with no GPU dependency |
 
 ### Inference Logic
 
-The repository includes implementations of test-time compute scaling methods similar to those described in recent reasoning literature (e.g., O1, DeepSeek-R1).
+The repository includes an experimental inference and test-time-compute stack grounded in public work on process supervision, verifier-guided search, hidden deliberation, and reasoning-oriented reinforcement learning. The exposed runtime primitives include PRM-aware reranking, MCTS, A* search, hidden-deliberation serving, and search-oriented runtime helpers.
 
 ```python
 from inference_optimizations import MCTSGenerator, BestOfNSampler
@@ -127,7 +128,6 @@ result = mcts.generate(prompt, max_length=512)
 ```
 
 ---
-
 ## Architecture
 
 ```mermaid
@@ -189,11 +189,39 @@ graph TB
     KTO --> SP
     PPO --> SP
     
-    SP --> IR
-    IR --> MCTS
-    IR --> BoN
-    IR --> SD
+SP --> IR
+IR --> MCTS
+IR --> BoN
+IR --> SD
 ```
+
+---
+
+## Repo Surfaces
+
+These files are part of the current public repo surface and are kept in-repo because they document the runtime and implementation context around the core training stack.
+
+| File | Current role |
+|:---|:---|
+| `INFERENCE_ARCHITECTURE_ANALYSIS.md` | Architecture-facing analysis of the inference lane and its intended integration posture |
+| `RLHF_CODEBASE_MAPPING_PLAN-1.md` | File-topology and authority map for the current codebase |
+| `NOTEPAD.md` | Working continuity and operator note surface preserved in-repo for live alignment work |
+
+The public landing page prioritizes the canonical runtime docs and direct literature lineage over internal synthesis notes.
+
+---
+
+## Research Lineage
+
+This experimental inference/search update is positioned as a synthesis of public literature and implementation work, not as a claim around any proprietary system label. The most relevant paper line for the current public runtime surface includes:
+
+- `Let's Verify Step by Step`
+- `Let's Reinforce Step by Step`
+- `Quiet-STaR: Language Models Can Teach Themselves to Think Before Speaking`
+- `Fast Quiet-STaR: Thinking Without Thought Tokens`
+- `AlphaZero-Like Tree-Search can Guide Large Language Model Decoding and Training`
+- `StepSearch: Igniting LLMs Search Ability via Step-Wise Proximal Policy Optimization`
+- `DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning`
 
 ---
 
@@ -330,6 +358,7 @@ Available hardware profiles:
 * **Production Ready**: Code is structured for maintainability and scalability, handling logging, checkpointing, and error recovery robustly.
 * **CPU-Only Viable**: The SFT training loop, LoRA adapter training, model merging, and telemetry collection are all validated on CPU hardware. GPU is supported and recommended for larger models and longer runs, but is not required.
 * **Inference Protocol Layer**: `inference_protocols.py` provides `PolicyAdapter`, `RewardScorerAdapter`, and `ValueScorerAdapter` wrappers that satisfy typed Protocols without assuming specific model attributes. All inference components consume these adapters rather than raw model objects, enabling drop-in swaps of any compatible model.
+* **Process-Supervision And Search**: The companion inference lane includes process-reward-aware reranking, verifier-guided search utilities, lexical-MDP abstractions, and hidden-deliberation answer-serving primitives for experimental test-time compute workflows.
 * **Telemetry**: `telemetry.py` provides a `TelemetryRecorder` singleton with thread-safe reservoir sampling (Vitter's Algorithm R) for latency quantiles, speculative acceptance rates, KV-cache hit ratios, and MCTS expansion counts. Snapshots are emittable as JSON at any point in a run.
 * **Deterministic Artifact Provenance**: All merge artifacts include a SHA256 manifest of input and output state dicts, recorded via `save_merge_artifact()`. This enables exact reproduction and audit of any released checkpoint.
 
@@ -337,15 +366,32 @@ Available hardware profiles:
 
 ## Provenance and Citation
 
-If you use any methods, code, orrepository in your research, please cite it aswell as adhere to the license terms.
+If you use any methods, code, or repository in your research, please cite it and follow the current GPLv3 distribution terms used by this public repo.
 
 ```bibtex
-@misc{https://doi.org/10.5281/zenodo.18607464, doi = {10.5281/ZENODO.18607464}, url = {https://zenodo.org/doi/10.5281/zenodo.18607464}, author = {Rowell, Christian Trey Levi}, keywords = {RLHF, DPO, PPO, Reinforcement Learning}, title = {Reinforcement Learning Multi Method Pipeline and Inference tooling}, publisher = {Zenodo}, year = {2026}, copyright = {Sovereign Anti-Exploitation Software License }}
+@misc{https://doi.org/10.5281/zenodo.18607464, doi = {10.5281/ZENODO.18607464}, url = {https://zenodo.org/doi/10.5281/zenodo.18607464}, author = {Rowell, Christian Trey Levi}, keywords = {RLHF, DPO, PPO, Reinforcement Learning}, title = {Reinforcement Learning Multi Method Pipeline and Inference tooling}, publisher = {Zenodo}, year = {2026}, copyright = {GNU General Public License v3.0}}
 ```
 
 --
 
 ## References
+
+**Process Supervision**
+Let's Verify Step by Step. (2023).
+
+Let's Reinforce Step by Step. (2023).
+
+**Hidden Deliberation**
+Quiet-STaR: Language Models Can Teach Themselves to Think Before Speaking. (2024).
+
+Fast Quiet-STaR: Thinking Without Thought Tokens. (2025).
+
+**Search And Reasoning**
+AlphaZero-Like Tree-Search can Guide Large Language Model Decoding and Training. (2023).
+
+StepSearch: Igniting LLMs Search Ability via Step-Wise Proximal Policy Optimization. (2025).
+
+A Training Data Recipe to Accelerate A* Search with Large Language Models. (2024).
 
 **Direct Preference Optimization**
 Rafailov, R., et al. (2023). Direct Preference Optimization: Your Language Model is Secretly a Reward Model.
@@ -361,3 +407,4 @@ Schulman, J., et al. (2017). Proximal Policy Optimization Algorithms.
 
 **FlashAttention-2**
 Dao, T. (2023). FlashAttention-2: Faster Attention with Better Parallelism and Work Partitioning.
+

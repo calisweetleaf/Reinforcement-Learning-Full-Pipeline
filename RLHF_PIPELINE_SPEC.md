@@ -17,6 +17,7 @@ behavior in the codebase.
 ## High-Level Architecture
 
 ### Training Pipeline
+
 ```mermaid
 flowchart LR
   A[SFT Data] --> B[SFTDataset] --> C[SFTTrainer] --> D[PolicyModel]
@@ -41,6 +42,7 @@ flowchart LR
 ```
 
 ### Inference-Time Compute (SOTA++)
+
 ```mermaid
 flowchart LR
   T[Prompt] --> U{Best-of-N}
@@ -59,6 +61,7 @@ flowchart LR
 ```
 
 ### Model Merging
+
 ```mermaid
 flowchart LR
   AF[Base Model] --> AG{TIES-Merging}

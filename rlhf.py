@@ -2,6 +2,23 @@
 SOTA RL/RLHF Implementation - Production Grade
 Based on comprehensive research analysis (2017-2025)
 
+First set of classes in the flow are configs:
+- DATA STRUCTURES
+- mmap dataset streaming
+- Value model (critic) for PPO with per-token value predictions.
+- Early stopping utility for training loops.
+    Monitors a metric and signals when training should stop based on
+    lack of improvement over a patience period.
+- Unified logging for training metrics with WandB and Tensorboard support.
+- Manages model checkpoints with rolling saves.
+-     Comprehensive evaluation suite for RLHF models.
+    
+    Supports:
+    - KL divergence measurement
+    - Reward accuracy computation
+    - Response generation with diversity metrics
+    - Win rate estimation between models
+
 Implements state-of-the-art preference learning methods:
 - PPO (Proximal Policy Optimization) with GAE
 - DPO (Direct Preference Optimization)
@@ -9,6 +26,10 @@ Implements state-of-the-art preference learning methods:
 - SimPO (Simple Preference Optimization) - Reference-free
 - KTO (Kahneman-Tversky Optimization) - Non-paired data
 - IPO (Identity Preference Optimization)
+
+- [optional] - self play
+- [optional] - contextcompressor
+- [optional] - itterative refiner
 
 Author: Production RLHF System
 Version: 2.0.0
@@ -949,20 +970,34 @@ class StreamingGRPODataset(torch.utils.data.IterableDataset):
 
 class RewardModel(nn.Module):
     """Reward model for predicting human preferences with improved architecture."""
-    
+
+    @staticmethod
+    def _resolve_backbone_dtype(backbone_dtype: Optional[torch.dtype]) -> torch.dtype:
+        """Choose a sane default precision for the current runtime."""
+        if backbone_dtype is not None:
+            return backbone_dtype
+        if torch.cuda.is_available():
+            return torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        return torch.float32
+
     def __init__(
         self, 
         base_model_name: str, 
         num_labels: int = 1,
         dropout: float = 0.1,
-        use_mean_pooling: bool = False
+        use_mean_pooling: bool = False,
+        backbone_dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
         self.base_model_name = base_model_name
         self.num_labels = num_labels
         self.dropout_rate = dropout
         self.use_mean_pooling = use_mean_pooling
-        self.backbone = AutoModel.from_pretrained(base_model_name)
+        self.backbone = AutoModel.from_pretrained(
+            base_model_name,
+            torch_dtype=self._resolve_backbone_dtype(backbone_dtype),
+            trust_remote_code=True,
+        )
         
         hidden_size = self.backbone.config.hidden_size
         self.dropout = nn.Dropout(dropout)
@@ -1009,6 +1044,10 @@ class RewardModel(nn.Module):
             ]
         
         pooled_output = self.dropout(pooled_output)
+        # Keep head math dtype-consistent when backbone is fp16 and head is fp32.
+        head_param = next(self.reward_head.parameters())
+        if pooled_output.dtype != head_param.dtype:
+            pooled_output = pooled_output.to(dtype=head_param.dtype)
         reward = self.reward_head(pooled_output)
         return reward.squeeze(-1)
 
@@ -1066,13 +1105,18 @@ class ProcessRewardModel(nn.Module):
         base_model_name: str,
         num_labels: int = 1,
         dropout: float = 0.1,
-        step_detection: str = "newline"  # "newline", "marker", "learned"
+        step_detection: str = "newline",  # "newline", "marker", "learned"
+        backbone_dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
         self.base_model_name = base_model_name
         self.num_labels = num_labels
         self.dropout_rate = dropout
-        self.backbone = AutoModel.from_pretrained(base_model_name)
+        self.backbone = AutoModel.from_pretrained(
+            base_model_name,
+            torch_dtype=RewardModel._resolve_backbone_dtype(backbone_dtype),
+            trust_remote_code=True,
+        )
         self.step_detection = step_detection
 
         hidden_size = self.backbone.config.hidden_size
@@ -1185,6 +1229,10 @@ class ProcessRewardModel(nn.Module):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         hidden_states = outputs.last_hidden_state  # (batch, seq_len, hidden)
         hidden_states = self.dropout(hidden_states)
+        # Align with MLP head dtype to avoid Half/Float matmul mismatches on CPU.
+        outcome_head_param = next(self.outcome_head.parameters())
+        if hidden_states.dtype != outcome_head_param.dtype:
+            hidden_states = hidden_states.to(dtype=outcome_head_param.dtype)
 
         # Outcome reward (final token)
         batch_size = input_ids.size(0)
@@ -1272,13 +1320,14 @@ class ProcessRewardModel(nn.Module):
 
 class ValueModel(nn.Module):
     """Value model (critic) for PPO with per-token value predictions."""
-    
+
     def __init__(
         self, 
         base_model_name: str,
         dropout: float = 0.1,
         share_backbone: bool = False,
-        backbone: Optional[nn.Module] = None
+        backbone: Optional[nn.Module] = None,
+        backbone_dtype: Optional[torch.dtype] = None,
     ):
         super().__init__()
         self.base_model_name = base_model_name
@@ -1288,7 +1337,11 @@ class ValueModel(nn.Module):
             self.backbone = backbone
             self.shared = True
         else:
-            self.backbone = AutoModel.from_pretrained(base_model_name)
+            self.backbone = AutoModel.from_pretrained(
+                base_model_name,
+                torch_dtype=RewardModel._resolve_backbone_dtype(backbone_dtype),
+                trust_remote_code=True,
+            )
             self.shared = False
         
         hidden_size = self.backbone.config.hidden_size
@@ -1312,6 +1365,10 @@ class ValueModel(nn.Module):
         outputs = self.backbone(input_ids=input_ids, attention_mask=attention_mask)
         hidden_states = outputs.last_hidden_state
         hidden_states = self.dropout(hidden_states)
+        # Value head may remain fp32 even when backbone runs fp16.
+        value_head_param = next(self.value_head.parameters())
+        if hidden_states.dtype != value_head_param.dtype:
+            hidden_states = hidden_states.to(dtype=value_head_param.dtype)
         
         values = self.value_head(hidden_states).squeeze(-1)  # (batch, seq_len)
         
@@ -2199,8 +2256,13 @@ class RewardModelTrainer:
                         
                         # L2 regularization
                         if self.config.l2_reg > 0:
-                            l2_loss = sum(p.pow(2).sum() for p in model.parameters())
-                            loss = loss + self.config.l2_reg * l2_loss
+                            # Regularize only trainable params in fp32 for numeric stability.
+                            reg_params = [p for p in model.parameters() if p.requires_grad]
+                            if reg_params:
+                                l2_loss = torch.zeros((), device=logits.device, dtype=torch.float32)
+                                for p in reg_params:
+                                    l2_loss = l2_loss + p.float().pow(2).sum()
+                                loss = loss + self.config.l2_reg * l2_loss.to(loss.dtype)
                     
                     self.device_manager.backward(loss, optimizer)
                     self.device_manager.step(optimizer, self.config.max_grad_norm)
@@ -2376,8 +2438,13 @@ class ProcessRewardModelTrainer:
                     loss = F.binary_cross_entropy_with_logits(logits, targets)
 
                     if self.config.l2_reg > 0:
-                        l2_loss = sum(p.pow(2).sum() for p in self.model.parameters())
-                        loss = loss + self.config.l2_reg * l2_loss
+                        # Regularize only trainable params in fp32 for numeric stability.
+                        reg_params = [p for p in self.model.parameters() if p.requires_grad]
+                        if reg_params:
+                            l2_loss = torch.zeros((), device=logits.device, dtype=torch.float32)
+                            for p in reg_params:
+                                l2_loss = l2_loss + p.float().pow(2).sum()
+                            loss = loss + self.config.l2_reg * l2_loss.to(loss.dtype)
 
                 self.device_manager.backward(loss, optimizer)
                 self.device_manager.step(optimizer, self.config.max_grad_norm)

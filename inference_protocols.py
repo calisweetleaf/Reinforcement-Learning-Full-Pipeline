@@ -21,13 +21,25 @@ mcts    = MCTSGenerator(policy, value, tokenizer)
 from __future__ import annotations
 
 import logging
+import math
+import re
 from types import SimpleNamespace
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 import torch
 import torch.nn as nn
 
 logger = logging.getLogger("InferenceProtocols")
+DEFAULT_THINK_START_TAG = "<think>"
+DEFAULT_THINK_END_TAG = "</think>"
+
+
+class InferenceProtocolError(RuntimeError):
+    """Raised when protocol contracts are violated."""
+
+
+class ProtocolValidationError(ValueError):
+    """Raised on invalid adapter inputs/outputs."""
 
 
 # =============================================================================
@@ -61,6 +73,40 @@ class ValueScorerLike(Protocol):
     """Interface for a value model that can score a state text."""
 
     def score(self, text: str) -> float:
+        ...
+
+
+@runtime_checkable
+class HiddenCoTLike(Protocol):
+    """
+    Contract for components that MUST emit hidden reasoning and answer-only text.
+
+    Returns:
+        (full_sequence_with_hidden_cot, answer_only_without_hidden_cot)
+    """
+
+    def generate_with_hidden_cot(
+        self,
+        prompt: str,
+        max_thinking_tokens: int = 512,
+        max_answer_tokens: int = 256,
+    ) -> Tuple[str, str]:
+        ...
+
+
+@runtime_checkable
+class VerifiableRewardLike(Protocol):
+    """Contract for deterministic/rule-based verifiers."""
+
+    def verify(self, completion: str, **kwargs) -> float:
+        ...
+
+
+@runtime_checkable
+class StepLevelScorerLike(Protocol):
+    """Contract for step-level scorers (returns one score per reasoning step)."""
+
+    def score_steps(self, completion: str) -> List[float]:
         ...
 
 
@@ -263,3 +309,535 @@ class ValueScorerAdapter:
     def score_text(self, text: str) -> float:
         """Backwards-compatible alias expected by legacy inference code."""
         return self.score(text)
+
+
+class HiddenCoTAdapter:
+    """
+    Enforces a strict hidden-CoT contract over generation components.
+
+    This adapter is intended for Q* lanes where hidden chain-of-thought is
+    mandatory and answer-only serving must be guaranteed.
+    """
+
+    def __init__(
+        self,
+        generator: Any,
+        *,
+        think_start_tag: str = DEFAULT_THINK_START_TAG,
+        think_end_tag: str = DEFAULT_THINK_END_TAG,
+    ):
+        if generator is None:
+            raise ProtocolValidationError("HiddenCoTAdapter requires a non-null generator.")
+        if not isinstance(think_start_tag, str) or not think_start_tag.strip():
+            raise ProtocolValidationError("think_start_tag must be a non-empty string.")
+        if not isinstance(think_end_tag, str) or not think_end_tag.strip():
+            raise ProtocolValidationError("think_end_tag must be a non-empty string.")
+        if think_start_tag == think_end_tag:
+            raise ProtocolValidationError("think_start_tag and think_end_tag must differ.")
+        self._generator = generator
+        self._think_start_tag = think_start_tag
+        self._think_end_tag = think_end_tag
+
+    def generate_with_hidden_cot(
+        self,
+        prompt: str,
+        max_thinking_tokens: int = 512,
+        max_answer_tokens: int = 256,
+    ) -> Tuple[str, str]:
+        self._validate_prompt(prompt)
+        self._validate_token_budget("max_thinking_tokens", max_thinking_tokens)
+        self._validate_token_budget("max_answer_tokens", max_answer_tokens)
+
+        full_sequence: str
+        answer_only: str
+        generator = self._generator
+
+        if hasattr(generator, "generate_with_hidden_cot"):
+            logger.debug("Using native generate_with_hidden_cot path.")
+            full_sequence, answer_only = self._call_native_hidden_cot(
+                prompt, max_thinking_tokens, max_answer_tokens
+            )
+        elif hasattr(generator, "generate"):
+            logger.debug("Using generic generate() path and normalizing output.")
+            full_sequence, answer_only = self._call_generic_generate(prompt)
+        else:
+            raise InferenceProtocolError(
+                "Generator does not implement generate_with_hidden_cot() or generate()."
+            )
+
+        if not isinstance(full_sequence, str):
+            raise InferenceProtocolError("Hidden CoT full_sequence must be a string.")
+        if not isinstance(answer_only, str):
+            raise InferenceProtocolError("Hidden CoT answer_only must be a string.")
+
+        full_sequence = full_sequence.strip()
+        answer_only = answer_only.strip()
+        if not full_sequence:
+            raise InferenceProtocolError("Hidden CoT generation returned empty full_sequence.")
+        if not answer_only:
+            answer_only = self._derive_answer_only(full_sequence)
+
+        self._validate_hidden_cot(full_sequence)
+        answer_only = self._sanitize_answer_only(answer_only)
+        if not answer_only:
+            raise InferenceProtocolError("Answer-only output is empty after sanitization.")
+
+        logger.info(
+            "HiddenCoTAdapter generated output successfully (full_len=%d, answer_len=%d).",
+            len(full_sequence),
+            len(answer_only),
+        )
+        return full_sequence, answer_only
+
+    def _call_native_hidden_cot(
+        self,
+        prompt: str,
+        max_thinking_tokens: int,
+        max_answer_tokens: int,
+    ) -> Tuple[str, str]:
+        fn = self._generator.generate_with_hidden_cot
+        try:
+            result = fn(
+                prompt=prompt,
+                max_thinking_tokens=max_thinking_tokens,
+                max_answer_tokens=max_answer_tokens,
+            )
+        except TypeError:
+            # Backward-compatible call shape.
+            result = fn(prompt, max_thinking_tokens=max_thinking_tokens)
+        return self._normalize_pair_result(result, source="generate_with_hidden_cot")
+
+    def _call_generic_generate(self, prompt: str) -> Tuple[str, str]:
+        result = self._generator.generate(prompt)
+        if isinstance(result, dict):
+            full_sequence = self._pick_first_non_empty(
+                result,
+                ("full_sequence", "full_text", "raw_text", "sequence"),
+            )
+            answer_only = self._pick_first_non_empty(
+                result,
+                ("answer_only", "servable_sequence", "answer"),
+            )
+            if not full_sequence and answer_only:
+                full_sequence = prompt + " " + answer_only
+            if not answer_only and full_sequence:
+                answer_only = self._derive_answer_only(full_sequence)
+            return full_sequence, answer_only
+        return self._normalize_pair_result(result, source="generate")
+
+    @staticmethod
+    def _normalize_pair_result(result: Any, source: str) -> Tuple[str, str]:
+        if not isinstance(result, tuple) or len(result) != 2:
+            raise InferenceProtocolError(
+                f"{source} must return a 2-tuple (full_sequence, answer_only)."
+            )
+        full_sequence, answer_only = result
+        if not isinstance(full_sequence, str) or not isinstance(answer_only, str):
+            raise InferenceProtocolError(
+                f"{source} returned non-string outputs; expected (str, str)."
+            )
+        return full_sequence, answer_only
+
+    @staticmethod
+    def _pick_first_non_empty(payload: Dict[str, Any], keys: Tuple[str, ...]) -> str:
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    @staticmethod
+    def _validate_prompt(prompt: str) -> None:
+        if not isinstance(prompt, str):
+            raise ProtocolValidationError("prompt must be a string.")
+        if not prompt.strip():
+            raise ProtocolValidationError("prompt must be non-empty.")
+
+    @staticmethod
+    def _validate_token_budget(name: str, value: int) -> None:
+        if not isinstance(value, int):
+            raise ProtocolValidationError(f"{name} must be an integer.")
+        if value <= 0:
+            raise ProtocolValidationError(f"{name} must be positive.")
+        if value > 16384:
+            raise ProtocolValidationError(f"{name}={value} exceeds safety ceiling 16384.")
+
+    def _validate_hidden_cot(self, full_sequence: str) -> None:
+        has_start = self._think_start_tag in full_sequence
+        has_end = self._think_end_tag in full_sequence
+        if not has_start or not has_end:
+            raise InferenceProtocolError(
+                "Hidden CoT contract violation: missing required thinking tags."
+            )
+        if has_start != has_end:
+            raise InferenceProtocolError("Malformed hidden CoT tags: missing opening/closing pair.")
+        if has_start and full_sequence.find(self._think_start_tag) > full_sequence.find(self._think_end_tag):
+            raise InferenceProtocolError("Malformed hidden CoT tags: closing tag appears before opening tag.")
+
+    def _derive_answer_only(self, full_sequence: str) -> str:
+        if self._think_start_tag not in full_sequence:
+            return full_sequence.strip()
+        pattern = (
+            re.escape(self._think_start_tag)
+            + r".*?"
+            + re.escape(self._think_end_tag)
+        )
+        stripped = re.sub(pattern, "", full_sequence, flags=re.DOTALL).strip()
+        return stripped
+
+    def _sanitize_answer_only(self, answer_only: str) -> str:
+        if self._think_start_tag in answer_only or self._think_end_tag in answer_only:
+            logger.warning("Answer-only output still contains hidden-CoT tags; stripping tags defensively.")
+            answer_only = self._derive_answer_only(answer_only)
+        return answer_only.strip()
+
+
+class VerifiableRewardAdapter:
+    """
+    Normalizes deterministic verifier interfaces to verify(completion, **kwargs).
+    """
+
+    def __init__(self, verifier: Any, *, clamp_to_unit: bool = True):
+        if verifier is None:
+            raise ProtocolValidationError("VerifiableRewardAdapter requires a non-null verifier.")
+        self._verifier = verifier
+        self._clamp_to_unit = bool(clamp_to_unit)
+
+    def verify(self, completion: str, **kwargs) -> float:
+        if not isinstance(completion, str):
+            raise ProtocolValidationError("completion must be a string.")
+        if not completion.strip():
+            logger.warning("Verifier received empty completion text.")
+
+        raw_score = self._call_verifier(completion, **kwargs)
+        if not isinstance(raw_score, (int, float)):
+            raise InferenceProtocolError("Verifier returned non-numeric score.")
+        score = float(raw_score)
+        if not math.isfinite(score):
+            raise InferenceProtocolError("Verifier returned non-finite score.")
+
+        if self._clamp_to_unit:
+            if score < -1.0 or score > 1.0:
+                logger.warning("Verifier score %.4f out of range [-1,1]; clamping.", score)
+            return max(-1.0, min(1.0, score))
+        return score
+
+    def _call_verifier(self, completion: str, **kwargs) -> float:
+        verifier = self._verifier
+        if hasattr(verifier, "verify"):
+            return float(verifier.verify(completion, **kwargs))
+        if callable(verifier):
+            return float(verifier(completion, **kwargs))
+        if hasattr(verifier, "score"):
+            return float(verifier.score(completion))
+        raise InferenceProtocolError(
+            "Verifier must implement verify(), score(), or be callable."
+        )
+
+
+class StepLevelScorerAdapter:
+    """
+    Adapts step-level scoring for PRM-style reranking with strict score hygiene.
+    """
+
+    def __init__(
+        self,
+        scorer: Any,
+        *,
+        step_delimiter: str = "\n\n",
+        clamp_min: float = -1.0,
+        clamp_max: float = 1.0,
+    ):
+        if scorer is None:
+            raise ProtocolValidationError("StepLevelScorerAdapter requires a non-null scorer.")
+        if not isinstance(step_delimiter, str) or not step_delimiter:
+            raise ProtocolValidationError("step_delimiter must be a non-empty string.")
+        if not isinstance(clamp_min, (int, float)) or not isinstance(clamp_max, (int, float)):
+            raise ProtocolValidationError("clamp_min/clamp_max must be numeric.")
+        if float(clamp_min) >= float(clamp_max):
+            raise ProtocolValidationError("clamp_min must be strictly less than clamp_max.")
+
+        self._scorer = scorer
+        self._step_delimiter = step_delimiter
+        self._clamp_min = float(clamp_min)
+        self._clamp_max = float(clamp_max)
+
+    def score_steps(self, completion: str) -> List[float]:
+        if not isinstance(completion, str):
+            raise ProtocolValidationError("completion must be a string.")
+
+        scorer = self._scorer
+        if hasattr(scorer, "score_steps"):
+            raw_scores = scorer.score_steps(completion)
+            return self._normalize_score_list(raw_scores)
+
+        steps = [s.strip() for s in completion.split(self._step_delimiter) if s.strip()]
+        if not steps:
+            return [self._normalize_score(self._score_single(completion))]
+
+        return [self._normalize_score(self._score_single(step)) for step in steps]
+
+    def _score_single(self, text: str) -> float:
+        scorer = self._scorer
+        if hasattr(scorer, "score"):
+            return float(scorer.score(text))
+        if hasattr(scorer, "score_text"):
+            return float(scorer.score_text(text))
+        if callable(scorer):
+            return float(scorer(text))
+        raise InferenceProtocolError(
+            "Step scorer must implement score_steps(), score(), score_text(), or be callable."
+        )
+
+    def _normalize_score_list(self, raw_scores: Any) -> List[float]:
+        if not isinstance(raw_scores, list):
+            raise InferenceProtocolError("score_steps() must return a list of numeric scores.")
+        if not raw_scores:
+            logger.warning("score_steps() returned an empty list; injecting neutral score 0.0.")
+            return [0.0]
+        return [self._normalize_score(v) for v in raw_scores]
+
+    def _normalize_score(self, value: Any) -> float:
+        if not isinstance(value, (int, float)):
+            raise InferenceProtocolError("Step scorer produced non-numeric score.")
+        score = float(value)
+        if not math.isfinite(score):
+            raise InferenceProtocolError("Step scorer produced non-finite score.")
+        if score < self._clamp_min or score > self._clamp_max:
+            logger.warning(
+                "Step score %.4f outside [%.4f, %.4f]; clamping.",
+                score,
+                self._clamp_min,
+                self._clamp_max,
+            )
+        return max(self._clamp_min, min(self._clamp_max, score))
+
+
+class ProcessRewardModelAdapter:
+    """
+    Wraps rlhf.ProcessRewardModel and exposes RewardScorerLike + StepLevelScorerLike contracts.
+
+    score_steps() uses the PRM's internal token-aligned boundary detection (newline token IDs
+    13/198/271 by default, or learned detector) instead of naive text splitting — the key
+    correctness improvement over StepLevelScorerAdapter.
+
+    Blending contract matches RewardFunctionFactory.from_process_reward_model() in rlhf.py:
+      reward = outcome_reward + process_weight * mean(process_rewards[:num_steps])
+    """
+
+    def __init__(
+        self,
+        model: nn.Module,
+        tokenizer: Any,
+        device: torch.device,
+        max_length: int = 2048,
+        process_weight: float = 0.0,
+    ):
+        """
+        Args:
+            model: ProcessRewardModel instance from rlhf.py.
+            tokenizer: HuggingFace-compatible tokenizer.
+            device: Target device for inference.
+            max_length: Tokenizer truncation limit.
+            process_weight: Blend weight for process rewards vs outcome reward.
+        """
+        self._model = model
+        self._tokenizer = tokenizer
+        self._device = device
+        self._max_length = max_length
+        self._process_weight = float(process_weight)
+
+    @classmethod
+    def from_rlhf_model(
+        cls,
+        prm: nn.Module,
+        tokenizer: Any,
+        device: Optional[torch.device] = None,
+        max_length: int = 2048,
+        process_weight: float = 0.0,
+    ) -> "ProcessRewardModelAdapter":
+        """
+        Construct adapter from a ProcessRewardModel instance.
+
+        Args:
+            prm: ProcessRewardModel from rlhf.py.
+            tokenizer: HuggingFace-compatible tokenizer.
+            device: Target device; inferred from model parameters if None.
+            max_length: Tokenizer truncation limit.
+            process_weight: Blend weight for process rewards vs outcome reward.
+
+        Returns:
+            Configured ProcessRewardModelAdapter.
+        """
+        if device is None:
+            try:
+                device = next(prm.parameters()).device
+            except StopIteration:
+                device = torch.device("cpu")
+        return cls(prm, tokenizer, device, max_length, process_weight)
+
+    def _forward(self, text: str) -> Dict[str, Any]:
+        """Run one tokenize + model forward pass; return raw output dict."""
+        enc = self._tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self._max_length,
+            padding=False,
+        )
+        enc = {k: v.to(self._device) for k, v in enc.items()}
+        with torch.no_grad():
+            return self._model(
+                enc["input_ids"],
+                enc["attention_mask"],
+                return_process_rewards=True,
+            )
+
+    def score_outcome(self, prompt: str, completion: str = "") -> float:
+        """
+        Score the final outcome reward for a prompt + completion pair.
+
+        Args:
+            prompt: Input prompt or full text.
+            completion: Optional completion to append.
+
+        Returns:
+            Scalar outcome reward as float.
+        """
+        text = (prompt + " " + completion).strip() if completion else prompt
+        return float(self._forward(text)["outcome_reward"].squeeze().mean())
+
+    def score_steps(self, completion: str) -> List[float]:
+        """
+        Per-step process_rewards from actual PRM forward pass, not delimiter splitting.
+
+        Uses the PRM's internal token-aligned boundary detection for correctness.
+
+        Args:
+            completion: Full completion text to score step-by-step.
+
+        Returns:
+            List of per-step reward floats.
+        """
+        if not isinstance(completion, str):
+            raise ProtocolValidationError("completion must be a string.")
+        out = self._forward(completion)
+        process_rewards = out.get("process_rewards")
+        num_steps = out.get("num_steps")
+        if process_rewards is None:
+            return [float(out["outcome_reward"].squeeze().mean())]
+        n = max(
+            int(num_steps[0].item()) if num_steps is not None else process_rewards.shape[1],
+            1,
+        )
+        step_scores = process_rewards[0, :n].tolist()
+        return [float(s) for s in step_scores] if step_scores else [float(out["outcome_reward"].squeeze().mean())]
+
+    def score_combined(
+        self,
+        prompt: str,
+        completion: str = "",
+        process_weight: Optional[float] = None,
+    ) -> float:
+        """
+        Blended outcome + process reward score.
+
+        Mirrors RewardFunctionFactory.from_process_reward_model() in rlhf.py:
+          reward = outcome_reward + process_weight * mean(process_rewards[:num_steps])
+
+        Args:
+            prompt: Input prompt or full text.
+            completion: Optional completion to append.
+            process_weight: Override instance process_weight if provided.
+
+        Returns:
+            Blended scalar reward as float.
+        """
+        w = self._process_weight if process_weight is None else float(process_weight)
+        text = (prompt + " " + completion).strip() if completion else prompt
+        out = self._forward(text)
+        outcome = float(out["outcome_reward"].squeeze().mean())
+        if w <= 0.0:
+            return outcome
+        process_rewards = out.get("process_rewards")
+        num_steps = out.get("num_steps")
+        if process_rewards is None:
+            return outcome
+        n = max(
+            int(num_steps[0].item()) if num_steps is not None else process_rewards.shape[1],
+            1,
+        )
+        process_mean = float(process_rewards[0, :n].mean())
+        return outcome + w * process_mean  # mirrors RewardFunctionFactory contract
+
+    def score(self, prompt: str, completion: str = "") -> float:
+        """
+        Primary scoring entry point; delegates to score_combined().
+
+        Args:
+            prompt: Input prompt or full text.
+            completion: Optional completion to append.
+
+        Returns:
+            Blended scalar reward as float.
+        """
+        return self.score_combined(prompt, completion)
+
+    def score_batch(self, texts: List[str]) -> List[float]:
+        """
+        Score a list of texts with a single batched tokenizer call + model forward.
+
+        Uses padded batch tokenization so all texts are processed in one pass.
+        Falls back to sequential score() calls on any batching error (e.g. when
+        the PRM does not support batched input_ids shape, or the tokenizer does
+        not support list inputs).
+
+        Args:
+            texts: List of strings to score.
+
+        Returns:
+            List of scalar outcome reward floats in the same order as texts.
+        """
+        if not texts:
+            return []
+        try:
+            enc = self._tokenizer(
+                texts,
+                return_tensors="pt",
+                truncation=True,
+                max_length=self._max_length,
+                padding=True,
+            )
+            enc = {k: v.to(self._device) for k, v in enc.items()}
+            with torch.no_grad():
+                out = self._model(
+                    enc["input_ids"],
+                    enc["attention_mask"],
+                    return_process_rewards=True,
+                )
+            outcome_rewards = out["outcome_reward"]
+            # outcome_reward may be shape [B] or [B, 1] depending on the PRM head.
+            # Flatten to 1-D and return one scalar per text.
+            outcome_rewards = outcome_rewards.view(-1)
+            if outcome_rewards.shape[0] != len(texts):
+                # Shape mismatch: PRM returned unexpected batch dimension — fall through.
+                raise ValueError(
+                    f"outcome_reward batch size {outcome_rewards.shape[0]} != {len(texts)}"
+                )
+            return [float(outcome_rewards[i]) for i in range(len(texts))]
+        except Exception:
+            # Sequential fallback: ensures correctness even when the PRM or
+            # tokenizer does not support batched inference.
+            return [self.score(t) for t in texts]
+
+    def score_text(self, text: str) -> float:
+        """
+        Score a single text string (no prompt/completion split).
+
+        Args:
+            text: Full text to score.
+
+        Returns:
+            Scalar reward as float.
+        """
+        return self.score(text, "")
