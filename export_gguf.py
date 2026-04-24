@@ -302,7 +302,7 @@ def main() -> None:
     # Validate
     if not model_dir.exists():
         sys.exit(f"ERROR: Merged model not found at {model_dir}\n"
-                 f"Run merge_sft_lora.py first or set RLHF_MERGED_MODEL.")
+                 f"Run scripts/utils/merge_sft_lora.py first or set RLHF_MERGED_MODEL.")
 
     safetensors = list(model_dir.glob("*.safetensors"))
     if not safetensors:

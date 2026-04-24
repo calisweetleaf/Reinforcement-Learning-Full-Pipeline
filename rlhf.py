@@ -70,6 +70,7 @@ from typing import (
     TypeVar, Generic, Iterator, Sequence
 )
 import numpy as np
+from telemetry import TelemetryRecorder, default_recorder
 
 # Optional: PEFT for LoRA support
 try:
@@ -354,6 +355,55 @@ class GRPOConfig(BaseConfig):
         assert self.kl_coeff >= 0, "kl_coeff must be non-negative"
         assert 0 < self.clip_ratio < 1, "clip_ratio must be in (0, 1)"
         assert self.temperature > 0, "temperature must be positive"
+
+@dataclass_json
+@dataclass
+class TreeGRPOConfig(GRPOConfig):
+    """Tree-GRPO: GRPO extended for MCTS search-tree rollout data.
+
+    Extends ``GRPOConfig`` with tree-topology-aware advantage estimation.
+    Advantages are computed within sibling groups (children of the same MCTS
+    parent node) rather than across all completions of a prompt.  This matches
+    the intra-tree advantage formulation from the DeepSearch / Tree-GRPO
+    literature: the relative advantage of a specific rollout is estimated
+    against its sibling branches at the same tree level.
+
+    Key semantic differences from flat GRPO:
+    - Rewards are depth-discounted before normalisation:
+      ``r_eff = r * depth_discount^depth``.
+    - Visit counts optionally weight each sample's contribution to the group
+      mean/std, up-weighting heavily explored branches.
+    - Groups smaller than ``min_group_size`` are skipped (< 2 siblings means
+      no meaningful relative comparison).
+    - Rollout data comes from ``TreeRolloutCollector.collect_grouped()`` rather
+      than live policy sampling.
+    - ``cot_mode`` activates two-phase ``<think>...</think>`` generation via
+      ``ChainOfThoughtGenerator`` when supplied to ``TreeGRPOTrainer``.  When
+      enabled, thinking tokens receive gradient — the R1/o1 training pattern.
+    - ``reward_on_answer_only`` controls whether the reward function is applied
+      to the full ``<think>...</think>answer`` sequence or to the answer-only
+      stripped text.  Training always uses the full sequence for gradient;
+      this flag only controls what string is passed to the reward function.
+    """
+    depth_discount: float = 0.95
+    visit_count_weighting: bool = True
+    branch_comparison_mode: str = "sibling"   # "sibling" | "subtree" | "global"
+    use_prm_preference: bool = False
+    prm_min_aggregation: bool = True
+    rollout_source: str = "mcts"              # "mcts" | "astar" | "mixed"
+    min_group_size: int = 2
+    replay_buffer_size: int = 0              # 0 = disabled
+    replay_priority: str = "frontier"        # "uniform" | "hard_negative" | "frontier"
+    cot_mode: bool = False                   # use ChainOfThoughtGenerator for rollouts
+    reward_on_answer_only: bool = True       # score answer-only vs full CoT sequence
+
+    def validate(self) -> None:
+        super().validate()
+        assert 0 < self.depth_discount <= 1.0, "depth_discount must be in (0, 1]"
+        assert self.branch_comparison_mode in ("sibling", "subtree", "global")
+        assert self.rollout_source in ("mcts", "astar", "mixed")
+        assert self.min_group_size >= 2, "min_group_size must be >= 2"
+        assert self.replay_priority in ("uniform", "hard_negative", "frontier")
 
 @dataclass_json
 @dataclass
@@ -3009,6 +3059,540 @@ class GRPOTrainer:
 
 
 # ============================================================================
+# TREE-GRPO TRAINER (Search-Tree Relative Policy Optimisation)
+# ============================================================================
+
+class TreeGRPOTrainer:
+    """Tree-GRPO: GRPO with sibling-branch relative advantage estimation.
+
+    Consumes grouped rollout data from
+    ``TreeRolloutCollector.collect_grouped()`` (or any source that produces
+    ``Dict[group_id -> List[RolloutSample]]``).  Each group is a set of
+    completions that share the same MCTS parent node — true siblings in the
+    search tree.
+
+    Advantage estimation (Component 6 — intra-tree advantage):
+    ::
+
+        r_eff_i = r_i * depth_discount ^ depth_i          # depth-discount
+        w_i     = log(1 + visit_count_i) / sum(w)         # visit weight
+        mu_w    = sum(w_i * r_eff_i)                       # weighted mean
+        sigma_w = sqrt(sum(w_i * (r_eff_i - mu_w)^2))     # weighted std
+        A_i     = (r_eff_i - mu_w) / (sigma_w + eps)      # normalised advantage
+
+    When ``config.cot_mode`` is True and a ``cot_generator`` is supplied, the
+    trainer uses ``ChainOfThoughtGenerator`` for rollout generation instead of
+    flat ``policy_model.generate()``.  Completions are full
+    ``<think>reasoning</think>answer`` sequences and gradient flows through all
+    tokens — the R1/o1 training pattern.  Rewards are optionally scored on
+    ``answer_only`` (stripped) text when ``config.reward_on_answer_only`` is
+    True, so the reward function sees clean answers while the policy learns to
+    reason better through the thinking tokens.
+
+    The GRPO loss formula is identical to ``GRPOTrainer._compute_grpo_loss()``
+    (PPO-style clipping + DeepSeekMath KL estimator).  Only the advantage
+    values change.
+
+    Reference: DeepSeek-R1 (2025), DeepSearch (2025), Component 6 of the
+    Q* reconstruction (intra-tree advantage + prefix sharing).
+    """
+
+    def __init__(
+        self,
+        policy_model: "PolicyModel",
+        reference_model: "PolicyModel",
+        tokenizer: "PreTrainedTokenizer",
+        config: TreeGRPOConfig,
+        device_manager: Optional["DeviceManager"] = None,
+        replay_buffer: Optional["SelfPlayReplayBuffer"] = None,
+        cot_generator: Optional[Any] = None,  # ChainOfThoughtGenerator
+        reward_fn: Optional[Callable[[str, str], float]] = None,
+        prm_adapter: Optional[Any] = None,
+        telemetry: Optional["TelemetryRecorder"] = None,
+    ) -> None:
+        self.policy_model = policy_model
+        self.reference_model = reference_model
+        self.tokenizer = tokenizer
+        self.config = config
+        self.device_manager = device_manager or DeviceManager()
+        self.replay_buffer = replay_buffer
+        self.cot_generator = cot_generator
+        self.reward_fn = reward_fn
+        self.prm_adapter = prm_adapter
+        self.telemetry = telemetry or default_recorder
+
+        self.policy_model = self.device_manager.to_device(self.policy_model)
+        self.reference_model = self.device_manager.to_device(self.reference_model)
+
+        for param in self.reference_model.parameters():
+            param.requires_grad = False
+        self.reference_model.eval()
+
+    @staticmethod
+    def _strip_prompt_prefix(prompt: str, text: str) -> str:
+        if isinstance(text, str) and text.startswith(prompt):
+            return text[len(prompt):]
+        return text
+
+    def _get_training_completion(self, sample: Any) -> str:
+        metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+        full_sequence = metadata.get("full_sequence")
+        if isinstance(full_sequence, str) and full_sequence.strip():
+            return self._strip_prompt_prefix(sample.prompt, full_sequence)
+        return sample.completion
+
+    def _get_reward_completion(self, sample: Any) -> str:
+        metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+        candidate_key = "answer_only" if self.config.reward_on_answer_only else "full_sequence"
+        candidate = metadata.get(candidate_key)
+        if isinstance(candidate, str) and candidate.strip():
+            return self._strip_prompt_prefix(sample.prompt, candidate)
+        return self._get_training_completion(sample)
+
+    def _materialize_hidden_cot(self, sample: Any) -> None:
+        if not self.config.cot_mode or self.cot_generator is None:
+            return
+        metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+        if isinstance(metadata.get("full_sequence"), str) and metadata["full_sequence"].strip():
+            return
+        full_sequence, answer_only = self._generate_cot_completion(sample.prompt)
+        metadata = dict(metadata)
+        metadata["full_sequence"] = full_sequence
+        metadata["answer_only"] = answer_only
+        sample.metadata = metadata
+
+    def _refresh_group_rewards(self, grouped_samples: Dict[str, List[Any]]) -> None:
+        if self.reward_fn is None:
+            return
+        for samples in grouped_samples.values():
+            for sample in samples:
+                try:
+                    reward_completion = self._get_reward_completion(sample)
+                    sample.reward = float(self.reward_fn(sample.prompt, reward_completion))
+                except Exception as exc:
+                    logger.warning("TreeGRPOTrainer: reward refresh failed (%s), keeping existing reward.", exc)
+
+    def _group_samples_for_advantage(
+        self,
+        grouped_samples: Dict[str, List[Any]],
+    ) -> Dict[str, List[Any]]:
+        valid_groups = {
+            group_id: samples
+            for group_id, samples in grouped_samples.items()
+            if len(samples) >= self.config.min_group_size
+        }
+        if self.config.branch_comparison_mode == "sibling":
+            return valid_groups
+
+        flattened = [sample for samples in valid_groups.values() for sample in samples]
+        if len(flattened) < self.config.min_group_size:
+            return {}
+
+        if self.config.branch_comparison_mode == "global":
+            return {"__global__": flattened}
+
+        prompt_local: Dict[str, List[Any]] = {}
+        for sample in flattened:
+            prompt_local.setdefault(sample.prompt, []).append(sample)
+        return {
+            f"prompt::{prompt}": samples
+            for prompt, samples in prompt_local.items()
+            if len(samples) >= self.config.min_group_size
+        }
+
+    def _compute_preference_adjustments(
+        self,
+        samples: List[Any],
+    ) -> List[float]:
+        if not self.config.use_prm_preference or self.prm_adapter is None or len(samples) < 2:
+            return [0.0] * len(samples)
+
+        mode = "prm_min" if self.config.prm_min_aggregation else "prm_mean"
+        step_scores: List[List[float]] = []
+        for sample in samples:
+            try:
+                step_scores.append(self.prm_adapter.score_steps(self._get_reward_completion(sample)))
+            except Exception as exc:
+                logger.warning("TreeGRPOTrainer: PRM step scoring failed (%s), disabling preference signal for one sample.", exc)
+                step_scores.append([])
+
+        adjustments: List[float] = []
+        for i, scores_i in enumerate(step_scores):
+            if not scores_i:
+                adjustments.append(0.0)
+                continue
+            prefs: List[float] = []
+            for j, scores_j in enumerate(step_scores):
+                if i == j or not scores_j:
+                    continue
+                try:
+                    prob = float(
+                        self.prm_adapter.score_branch_preference(
+                            scores_i,
+                            scores_j,
+                            mode=mode,
+                        )
+                    )
+                    prefs.append((2.0 * prob) - 1.0)
+                except Exception as exc:
+                    logger.warning("TreeGRPOTrainer: branch preference failed (%s), skipping one pairwise comparison.", exc)
+            adjustments.append(sum(prefs) / len(prefs) if prefs else 0.0)
+        return adjustments
+
+    # ------------------------------------------------------------------
+    # Advantage computation
+    # ------------------------------------------------------------------
+
+    def _weighted_group_advantage(
+        self,
+        samples: List[Any],  # List[RolloutSample]
+    ) -> List[float]:
+        """Compute depth-discounted, visit-count-weighted group-relative advantages.
+
+        Returns a list of float advantages in the same order as ``samples``.
+        If the group has fewer than ``config.min_group_size`` members, or if
+        all rewards are identical (zero variance), returns zeros.
+        """
+        if len(samples) < self.config.min_group_size:
+            return [0.0] * len(samples)
+
+        # Depth-discounted effective rewards.
+        preference_adjustments = self._compute_preference_adjustments(samples)
+        r_eff = [
+            (s.reward * (self.config.depth_discount ** s.depth)) + pref
+            for s, pref in zip(samples, preference_adjustments)
+        ]
+
+        # Visit-count weights.
+        if self.config.visit_count_weighting:
+            raw_w = [math.log1p(s.visit_count) for s in samples]
+            total_w = sum(raw_w) or 1.0
+            weights = [w / total_w for w in raw_w]
+        else:
+            weights = [1.0 / len(samples)] * len(samples)
+
+        mu_w = sum(w * r for w, r in zip(weights, r_eff))
+        var_w = sum(w * (r - mu_w) ** 2 for w, r in zip(weights, r_eff))
+        sigma_w = math.sqrt(var_w) + 1e-8
+
+        return [(r - mu_w) / sigma_w for r in r_eff]
+
+    def _compute_tree_advantages(
+        self,
+        grouped_samples: Dict[str, List[Any]],
+    ) -> List[tuple]:  # List[Tuple[RolloutSample, float]]
+        """Compute tree advantages across all valid groups.
+
+        Returns ``(sample, advantage)`` pairs for every sample that belongs to
+        a group meeting ``min_group_size``.  Groups that are too small are
+        discarded; caller should log a warning if this is unexpected.
+        """
+        pairs: List[tuple] = []
+        for group_id, samples in self._group_samples_for_advantage(grouped_samples).items():
+            advantages = self._weighted_group_advantage(samples)
+            for sample, adv in zip(samples, advantages):
+                pairs.append((sample, adv))
+        return pairs
+
+    # ------------------------------------------------------------------
+    # Log-prob computation
+    # ------------------------------------------------------------------
+
+    def _compute_log_probs_for_sample(
+        self,
+        sample: Any,  # RolloutSample
+    ) -> tuple:  # Tuple[torch.Tensor, torch.Tensor]
+        """Tokenise prompt+completion and return (policy_logps, ref_logps).
+
+        Both tensors have shape ``[1, seq_len]``.  Only the completion tokens
+        receive gradient; prompt tokens are masked from the loss inside
+        ``GRPOTrainer._compute_grpo_loss()``.
+        """
+        device = self.device_manager.device
+        full_text = sample.prompt + sample.completion
+        enc = self.tokenizer(
+            full_text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=self.config.max_completion_length + 512,
+        )
+        input_ids = enc["input_ids"].to(device)
+        attention_mask = enc["attention_mask"].to(device)
+
+        with self.device_manager.autocast_context():
+            policy_logps, _ = self.policy_model.get_log_probs(
+                input_ids, attention_mask, input_ids
+            )
+            with torch.no_grad():
+                ref_logps, _ = self.reference_model.get_log_probs(
+                    input_ids, attention_mask, input_ids
+                )
+
+        return policy_logps, ref_logps
+
+    # ------------------------------------------------------------------
+    # CoT rollout generation
+    # ------------------------------------------------------------------
+
+    def _generate_cot_completion(self, prompt: str) -> tuple:  # Tuple[str, str]
+        """Generate a two-phase CoT completion for ``prompt``.
+
+        Returns ``(full_sequence, answer_only)`` using the ``cot_generator``
+        (``ChainOfThoughtGenerator``).  Falls back to flat ``policy_model``
+        generation if the generator is unavailable or raises.
+
+        The full_sequence ``<think>thinking</think>answer`` is the string used
+        for loss computation.  answer_only is passed to the reward function
+        when ``config.reward_on_answer_only`` is True.
+        """
+        if self.cot_generator is not None:
+            try:
+                if hasattr(self.cot_generator, "generate_with_hidden_cot"):
+                    full_seq, answer_only = self.cot_generator.generate_with_hidden_cot(
+                        prompt=prompt,
+                        max_thinking_tokens=self.config.max_completion_length,
+                        max_answer_tokens=max(64, self.config.max_completion_length // 2),
+                    )
+                    if full_seq:
+                        return full_seq, answer_only
+                result = self.cot_generator.generate(prompt)
+                if isinstance(result, dict):
+                    full_seq = result.get("full_sequence", "")
+                    servable = result.get("servable_sequence", result.get("answer", ""))
+                    if full_seq:
+                        return full_seq, servable
+            except Exception as exc:
+                logger.warning("TreeGRPOTrainer: cot_generator failed (%s), falling back.", exc)
+
+        # Fallback: flat generation.
+        device = self.device_manager.device
+        enc = self.tokenizer(prompt, return_tensors="pt")
+        enc = {k: v.to(device) for k, v in enc.items()}
+        with torch.no_grad():
+            output_ids = self.policy_model.generate(
+                input_ids=enc["input_ids"],
+                attention_mask=enc["attention_mask"],
+                max_new_tokens=self.config.max_completion_length,
+                temperature=self.config.temperature,
+                do_sample=True,
+                top_p=0.95,
+            )
+        completion_ids = output_ids[0][enc["input_ids"].shape[1]:]
+        completion_text = self.tokenizer.decode(completion_ids, skip_special_tokens=True)
+        full_seq = prompt + completion_text
+        return full_seq, full_seq
+
+    # ------------------------------------------------------------------
+    # Training loop
+    # ------------------------------------------------------------------
+
+    def train(
+        self,
+        grouped_rollouts: Dict[str, List[Any]],
+        num_steps: Optional[int] = None,
+    ) -> Dict[str, List[float]]:
+        """Train on pre-collected grouped rollout data.
+
+        Args:
+            grouped_rollouts: ``Dict[group_id -> List[RolloutSample]]`` from
+                ``TreeRolloutCollector.collect_grouped()``.  If
+                ``config.replay_buffer_size > 0``, new samples are added to the
+                replay buffer and a mix of fresh + replayed samples is used.
+            num_steps: Maximum training steps.  Defaults to iterating once over
+                all (sample, advantage) pairs.
+
+        Returns:
+            Dict with ``'metrics'`` key containing per-step loss and reward stats.
+        """
+        num_training_steps = num_steps or max(
+            1, sum(len(v) for v in grouped_rollouts.values())
+        )
+        optimizer, scheduler = create_optimizer(
+            self.policy_model, self.config, num_training_steps
+        )
+        training_logger = TrainingLogger(self.config, TrainingStage.GRPO)
+
+        # Add fresh samples to replay buffer if enabled.
+        if self.replay_buffer is not None and self.config.replay_buffer_size > 0:
+            fresh_samples = [s for samps in grouped_rollouts.values() for s in samps]
+            self.replay_buffer.add(fresh_samples)
+            self.telemetry.record_replay_event(
+                mode="add",
+                buffer_size=len(self.replay_buffer),
+                n_sampled=0,
+                priority_type=self.config.replay_priority,
+            )
+
+        # Materialize optional hidden-CoT training targets before any reward / advantage work.
+        for samples in grouped_rollouts.values():
+            for sample in samples:
+                self._materialize_hidden_cot(sample)
+
+        if self.reward_fn is not None and (
+            self.config.cot_mode
+            or self.config.reward_on_answer_only
+            or self.config.use_prm_preference
+        ):
+            self._refresh_group_rewards(grouped_rollouts)
+
+        # Optionally mix in replay samples.
+        replay_grouped: Dict[str, List[Any]] = {}
+        if (
+            self.replay_buffer is not None
+            and len(self.replay_buffer) > 0
+            and self.config.replay_buffer_size > 0
+        ):
+            fresh_count = max(1, sum(len(samples) for samples in grouped_rollouts.values()))
+            n_replay = max(1, fresh_count // 4)
+            replay_samples = self.replay_buffer.sample(n_replay)
+            self.telemetry.record_replay_event(
+                mode="sample",
+                buffer_size=len(self.replay_buffer),
+                n_sampled=len(replay_samples),
+                priority_type=self.config.replay_priority,
+            )
+            for sample in replay_samples:
+                replay_grouped.setdefault(sample.group_id or f"prompt::{sample.prompt}", []).append(sample)
+
+        merged_groups: Dict[str, List[Any]] = {
+            group_id: list(samples)
+            for group_id, samples in grouped_rollouts.items()
+        }
+        for group_id, samples in replay_grouped.items():
+            merged_groups.setdefault(group_id, []).extend(samples)
+
+        # Compute tree advantages after search + replay groups are final.
+        sample_adv_pairs = self._compute_tree_advantages(merged_groups)
+        if not sample_adv_pairs:
+            logger.warning(
+                "TreeGRPOTrainer: no valid sibling groups after filtering "
+                "(min_group_size=%d, total_groups=%d). No gradient steps will be taken.",
+                self.config.min_group_size,
+                len(merged_groups),
+            )
+
+        self.policy_model.train()
+        metrics_history: List[Dict[str, float]] = []
+        global_step = 0
+
+        for sample, advantage in sample_adv_pairs:
+            if num_steps is not None and global_step >= num_steps:
+                break
+
+            device = self.device_manager.device
+            max_len = self.config.max_completion_length + 512
+
+            # Tokenize once; everything downstream reuses these tensors.
+            try:
+                completion_for_training = self._get_training_completion(sample)
+                full_enc = self.tokenizer(
+                    sample.prompt + completion_for_training,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=max_len,
+                )
+                input_ids = full_enc["input_ids"].to(device)
+                attention_mask = full_enc["attention_mask"].to(device)
+                prompt_len = self.tokenizer(
+                    sample.prompt,
+                    return_tensors="pt",
+                    truncation=True,
+                    max_length=512,
+                )["input_ids"].shape[1]
+            except Exception as exc:
+                logger.warning("TreeGRPOTrainer: tokenisation failed (%s), skipping.", exc)
+                continue
+
+            # Initial log-probs (policy + frozen reference); no gradient needed here.
+            try:
+                with torch.no_grad():
+                    policy_logps_init, _ = self.policy_model.get_log_probs(
+                        input_ids, attention_mask, input_ids
+                    )
+                    ref_logps, _ = self.reference_model.get_log_probs(
+                        input_ids, attention_mask, input_ids
+                    )
+            except Exception as exc:
+                logger.warning("TreeGRPOTrainer: log-prob computation failed (%s), skipping.", exc)
+                continue
+
+            # Slice to completion tokens only (mirrors GRPOTrainer slicing).
+            c_ref_logps = ref_logps[:, prompt_len - 1:]
+            old_logps = policy_logps_init[:, prompt_len - 1:].detach()
+            seq_len = old_logps.shape[1]
+            completion_mask = torch.ones(1, seq_len, device=device)
+            advantage_tensor = torch.tensor([advantage], device=device, dtype=torch.float32)
+
+            loss = torch.tensor(0.0, device=device)
+            kl_value = float("nan")
+            for _ in range(self.config.num_policy_updates):
+                with self.device_manager.autocast_context():
+                    # Fresh forward pass for gradient; same cached input_ids.
+                    policy_logps_cur, _ = self.policy_model.get_log_probs(
+                        input_ids, attention_mask, input_ids
+                    )
+                    c_logps_cur = policy_logps_cur[:, prompt_len - 1:]
+                    sl = min(c_logps_cur.shape[1], seq_len)
+                    # Reuse GRPOTrainer._compute_grpo_loss() exactly — same clipping
+                    # formula and DeepSeekMath KL estimator; only advantages differ.
+                    loss = GRPOTrainer._compute_grpo_loss(
+                        self,
+                        c_logps_cur[:, :sl],
+                        c_ref_logps[:, :sl],
+                        old_logps[:, :sl],
+                        advantage_tensor,
+                        completion_mask[:, :sl],
+                    )
+                    kl_tensor = (
+                        torch.exp(c_ref_logps[:, :sl] - c_logps_cur[:, :sl])
+                        - (c_ref_logps[:, :sl] - c_logps_cur[:, :sl])
+                        - 1
+                    )
+                    kl_value = float(kl_tensor.mean().detach().cpu())
+
+                self.device_manager.backward(loss, optimizer)
+                self.device_manager.step(optimizer, self.config.max_grad_norm)
+                optimizer.zero_grad()
+
+            if scheduler:
+                scheduler.step()
+
+            step_metrics = {
+                "loss": loss.item(),
+                "advantage": float(advantage),
+                "reward": sample.reward,
+                "depth": sample.depth,
+                "visit_count": sample.visit_count,
+                "kl_div": kl_value,
+            }
+            metrics_history.append(step_metrics)
+            global_step += 1
+            self.telemetry.record_tree_grpo_step(
+                mean_sibling_advantage=float(advantage),
+                n_groups_used=1,
+                depth_weighted_mean_reward=float(sample.reward * (self.config.depth_discount ** sample.depth)),
+                kl_div=kl_value,
+                loss=loss.item(),
+            )
+
+            if global_step % self.config.logging_steps == 0:
+                training_logger.log(
+                    {
+                        "loss": sum(m["loss"] for m in metrics_history[-self.config.logging_steps:])
+                        / self.config.logging_steps,
+                        "mean_reward": sum(m["reward"] for m in metrics_history[-self.config.logging_steps:])
+                        / self.config.logging_steps,
+                        "mean_advantage": sum(m["advantage"] for m in metrics_history[-self.config.logging_steps:])
+                        / self.config.logging_steps,
+                    },
+                    step=global_step,
+                )
+
+        training_logger.finish()
+        return {"metrics": metrics_history}
+
+
+# ============================================================================
 # SIMPO TRAINER (Reference-Free)
 # ============================================================================
 
@@ -5084,6 +5668,111 @@ class IterativeRefiner(nn.Module):
             temperature=temperature,
             return_history=False
         )
+
+
+# ============================================================================
+# SELF-PLAY REPLAY BUFFER
+# ============================================================================
+
+class SelfPlayReplayBuffer:
+    """Priority replay buffer for RolloutSample objects from tree search and self-play.
+
+    Stores up to ``max_size`` samples and evicts by inverse-priority when full.
+    Three priority strategies mirror the DeepSearch global-frontier selection
+    doctrine:
+
+    - ``'uniform'``: standard experience replay — all samples equally likely.
+    - ``'hard_negative'``: prioritise samples where the model was confident
+      (high ``visit_count``) but received low reward.  These are the most
+      informative failure cases for RL credit assignment.
+    - ``'frontier'``: prioritise max-depth boundary nodes with high visit counts
+      — the leading edge of the search tree, i.e. the most explored unexplored
+      region.  Priority = ``log1p(visit_count) * log1p(depth)``.
+      (Note: ``1/(1+depth)`` is intentionally wrong for this strategy; we want
+      deeper nodes prioritised, not penalised.)
+
+    Verified solutions are cached here to prevent redundant compute — smaller
+    models can achieve SOTA reasoning metrics at a fraction of GPU expenditure
+    by replaying high-value frontier samples across training steps.
+    """
+
+    def __init__(
+        self,
+        max_size: int = 10000,
+        priority_strategy: str = "frontier",
+    ) -> None:
+        assert priority_strategy in ("uniform", "hard_negative", "frontier"), (
+            f"Unknown priority_strategy '{priority_strategy}'. "
+            "Choose 'uniform', 'hard_negative', or 'frontier'."
+        )
+        self.max_size = max_size
+        self.priority_strategy = priority_strategy
+        self._buffer: List[Any] = []  # List[RolloutSample]
+
+    def _compute_priority(self, sample: Any) -> float:
+        """Return a non-negative priority scalar for eviction and sampling."""
+        if self.priority_strategy == "uniform":
+            return 1.0
+        if self.priority_strategy == "hard_negative":
+            # High-confidence failures: log(1+visits) * (1 - clamp(reward, 0, 1))
+            return math.log1p(sample.visit_count) * (1.0 - max(0.0, min(1.0, sample.reward)))
+        # "frontier": log(1+visits) * log(1+depth) — deeper + more-visited = higher
+        return math.log1p(sample.visit_count) * math.log1p(sample.depth)
+
+    def add(self, samples: List[Any]) -> None:
+        """Add samples to the buffer, evicting lowest-priority entries when full."""
+        for sample in samples:
+            if len(self._buffer) >= self.max_size:
+                # Evict the lowest-priority sample.
+                min_idx = min(
+                    range(len(self._buffer)),
+                    key=lambda i: self._compute_priority(self._buffer[i]),
+                )
+                self._buffer.pop(min_idx)
+            self._buffer.append(sample)
+
+    def sample(self, n: int) -> List[Any]:
+        """Sample ``n`` items proportional to priority (with replacement if needed).
+
+        Uses a normalised priority distribution.  When the buffer has fewer
+        than ``n`` entries, returns all entries.
+        """
+        import random
+        if not self._buffer:
+            return []
+        n = min(n, len(self._buffer))
+        priorities = [self._compute_priority(s) for s in self._buffer]
+        total = sum(priorities)
+        if total <= 0.0:
+            return random.sample(self._buffer, n)
+        weights = [p / total for p in priorities]
+        # Weighted sampling without replacement via the alias method approximation.
+        chosen = random.choices(self._buffer, weights=weights, k=n)
+        return chosen
+
+    def __len__(self) -> int:
+        return len(self._buffer)
+
+    def clear(self) -> None:
+        """Empty the buffer."""
+        self._buffer.clear()
+
+    def stats(self) -> Dict[str, Any]:
+        """Return a snapshot of buffer statistics."""
+        if not self._buffer:
+            return {"size": 0, "max_size": self.max_size, "strategy": self.priority_strategy}
+        rewards = [s.reward for s in self._buffer]
+        depths = [s.depth for s in self._buffer]
+        return {
+            "size": len(self._buffer),
+            "max_size": self.max_size,
+            "strategy": self.priority_strategy,
+            "mean_reward": sum(rewards) / len(rewards),
+            "max_reward": max(rewards),
+            "min_reward": min(rewards),
+            "mean_depth": sum(depths) / len(depths),
+            "max_depth": max(depths),
+        }
 
 
 # ============================================================================
@@ -7179,10 +7868,14 @@ class RLHFOrchestrator:
                 results = self._run_kto(data, config, **kwargs)
             elif method == 'ppo':
                 results = self._run_ppo(data, config, reward_fn=reward_fn_override, **kwargs)
+            elif method == 'tree_grpo':
+                results = self._run_tree_grpo(data, config, reward_fn=reward_fn_override, **kwargs)
+            elif method == 'hidden_cot_sft':
+                results = self._run_hidden_cot_sft(data, config, **kwargs)
             else:
                 raise ValueError(
                     f"Unknown method: {method}. "
-                    f"Supported: 'dpo', 'grpo', 'simpo', 'kto', 'ppo'"
+                    f"Supported: 'dpo', 'grpo', 'simpo', 'kto', 'ppo', 'tree_grpo', 'hidden_cot_sft'"
                 )
 
             # Post-optimization capability assessment
@@ -7422,11 +8115,302 @@ class RLHFOrchestrator:
 
         return trainer.train(dataloader, num_iterations=kwargs.get('num_iterations', 1000))
 
+    def _run_tree_grpo(
+        self,
+        data: Union[Dict[str, List[Any]], List[Any]],
+        config: Optional[TreeGRPOConfig],
+        reward_fn: Optional[Callable] = None,
+        **kwargs
+    ) -> Dict:
+        """Run Tree-GRPO training from pre-collected grouped rollout data.
+
+        ``data`` can be:
+
+        - ``Dict[group_id -> List[RolloutSample]]``: from
+          ``TreeRolloutCollector.collect_grouped()`` — preferred; sibling
+          structure is preserved and tree advantages are computed per group.
+        - ``List[Dict]`` with ``'prompt'`` keys: prompts are collected inline
+          using an ``MCTSGenerator`` supplied via ``kwargs['mcts_generator']``.
+          A ``TreeRolloutCollector`` is created internally.
+
+        Optional kwargs:
+        - ``mcts_generator``: ``MCTSGenerator`` for inline rollout collection.
+        - ``cot_generator``: ``ChainOfThoughtGenerator`` to activate R1-style
+          two-phase CoT rollout generation.
+        - ``replay_buffer``: ``SelfPlayReplayBuffer`` instance to mix in
+          previously collected rollouts.
+        """
+        if config is None:
+            config = TreeGRPOConfig(output_dir=str(self.output_dir / "tree_grpo"))
+
+        if reward_fn is None:
+            if self.process_reward_model is not None:
+                reward_fn = RewardFunctionFactory.from_process_reward_model(
+                    self.process_reward_model,
+                    self.tokenizer,
+                    self.device_manager.device,
+                )
+            elif self.reward_models:
+                reward_fn = RewardFunctionFactory.from_reward_model(
+                    self.reward_models[0],
+                    self.tokenizer,
+                    self.device_manager.device,
+                )
+            else:
+                raise ValueError(
+                    "_run_tree_grpo: no reward_fn and no reward/process-reward model available."
+                )
+
+        prm_adapter = kwargs.get("prm_adapter")
+        if prm_adapter is None and self.process_reward_model is not None:
+            try:
+                from inference_protocols import ProcessRewardModelAdapter  # type: ignore
+                prm_adapter = ProcessRewardModelAdapter.from_rlhf_model(
+                    self.process_reward_model,
+                    self.tokenizer,
+                    device=self.device_manager.device,
+                    process_weight=kwargs.get("process_reward_weight", 0.0),
+                )
+            except Exception as exc:
+                logger.warning("_run_tree_grpo: failed to build ProcessRewardModelAdapter (%s).", exc)
+
+        def _group_rollout_samples(samples: List[Any]) -> Dict[str, List[Any]]:
+            grouped: Dict[str, List[Any]] = {}
+            for sample in samples:
+                group_id = getattr(sample, "group_id", None) or f"prompt::{sample.prompt}"
+                grouped.setdefault(group_id, []).append(sample)
+            return grouped
+
+        def _namespace_groups(grouped: Dict[str, List[Any]], source: str) -> Dict[str, List[Any]]:
+            namespaced: Dict[str, List[Any]] = {}
+            for group_id, samples in grouped.items():
+                scoped_group_id = f"{source}:{group_id}"
+                for sample in samples:
+                    sample.group_id = scoped_group_id
+                    metadata = sample.metadata if isinstance(sample.metadata, dict) else {}
+                    metadata = dict(metadata)
+                    metadata["rollout_source"] = source
+                    sample.metadata = metadata
+                namespaced[scoped_group_id] = samples
+            return namespaced
+
+        # If data is a list of prompts/dicts, collect grouped rollouts inline.
+        grouped_rollouts: Dict[str, List[Any]]
+        if isinstance(data, list) and data and hasattr(data[0], "group_id"):
+            grouped_rollouts = _group_rollout_samples(data)
+        elif isinstance(data, list):
+            # Wrap reward_fn: collectors expect (text) -> float.
+            def _single_arg_reward(text: str) -> float:
+                return float(reward_fn(text, ""))
+
+            prompts = [d["prompt"] if isinstance(d, dict) else d for d in data]
+            grouped_rollouts = {}
+
+            if config.rollout_source in ("mcts", "mixed"):
+                mcts_gen = kwargs.get("mcts_generator")
+                if mcts_gen is None and config.rollout_source == "mcts":
+                    raise ValueError(
+                        "_run_tree_grpo: rollout_source='mcts' requires kwargs['mcts_generator']."
+                    )
+                elif mcts_gen is None:
+                    logger.warning(
+                        "_run_tree_grpo: rollout_source='mixed' but no mcts_generator supplied; "
+                        "MCTS rollouts will be skipped."
+                    )
+                if mcts_gen is not None:
+                    from inference_optimizations import TreeRolloutCollector  # type: ignore
+                    collector = TreeRolloutCollector(
+                        mcts_generator=mcts_gen,
+                        reward_fn=_single_arg_reward,
+                    )
+                    mcts_grouped = collector.collect_grouped(
+                        prompts,
+                        n_samples_per_prompt=config.group_size,
+                    )
+                    grouped_rollouts.update(
+                        _namespace_groups(
+                            mcts_grouped,
+                            "mcts" if config.rollout_source == "mixed" else config.rollout_source,
+                        )
+                    )
+
+            if config.rollout_source in ("astar", "mixed"):
+                astar_gen = kwargs.get("astar_generator")
+                if astar_gen is None and config.rollout_source == "astar":
+                    raise ValueError(
+                        "_run_tree_grpo: rollout_source='astar' requires kwargs['astar_generator']."
+                    )
+                elif astar_gen is None:
+                    logger.warning(
+                        "_run_tree_grpo: rollout_source='mixed' but no astar_generator supplied; "
+                        "A* rollouts will be skipped."
+                    )
+                if astar_gen is not None:
+                    from inference_optimizations import AStarRolloutCollector  # type: ignore
+                    collector = AStarRolloutCollector(
+                        astar_generator=astar_gen,
+                        reward_fn=_single_arg_reward,
+                    )
+                    astar_grouped = _group_rollout_samples(collector.collect_grouped(prompts))
+                    grouped_rollouts.update(
+                        _namespace_groups(
+                            astar_grouped,
+                            "astar" if config.rollout_source == "mixed" else config.rollout_source,
+                        )
+                    )
+
+            if not grouped_rollouts:
+                raise ValueError(
+                    "_run_tree_grpo: no grouped rollouts were collected. "
+                    "Provide valid search generators or pre-collected grouped rollouts."
+                )
+        else:
+            grouped_rollouts = data  # type: ignore[assignment]
+
+        all_samples = [sample for samples in grouped_rollouts.values() for sample in samples]
+        if all_samples:
+            default_recorder.record_tree_rollout(
+                n_prompts=len({sample.prompt for sample in all_samples}),
+                n_samples=len(all_samples),
+                n_groups=len(grouped_rollouts),
+                mean_reward=sum(sample.reward for sample in all_samples) / len(all_samples),
+                mean_depth=sum(sample.depth for sample in all_samples) / len(all_samples),
+                source=config.rollout_source,
+            )
+
+        replay_buffer = kwargs.get("replay_buffer")
+        if replay_buffer is None and config.replay_buffer_size > 0:
+            replay_buffer = SelfPlayReplayBuffer(
+                max_size=config.replay_buffer_size,
+                priority_strategy=config.replay_priority,
+            )
+
+        trainer = TreeGRPOTrainer(
+            policy_model=self.policy_model,
+            reference_model=self.reference_model,
+            tokenizer=self.tokenizer,
+            config=config,
+            device_manager=self.device_manager,
+            replay_buffer=replay_buffer,
+            cot_generator=kwargs.get("cot_generator"),
+            reward_fn=reward_fn,
+            prm_adapter=prm_adapter,
+            telemetry=default_recorder,
+        )
+
+        return trainer.train(grouped_rollouts, num_steps=kwargs.get("num_steps"))
+
+    def _run_hidden_cot_sft(
+        self,
+        data: Union[List[str], List[Dict[str, str]]],
+        config: Optional[SFTConfig] = None,
+        **kwargs
+    ) -> Dict:
+        """Generate hidden-CoT training data and run SFT on the collected sequences.
+
+        This is the R1/o1 SFT warmstart stage.  The policy learns to emit
+        ``<think>reasoning</think>answer`` structure by training on collected
+        sequences.  After SFT warmstart, RL (Tree-GRPO) can refine the
+        reasoning quality via advantage signal on the thinking tokens.
+
+        Flow::
+
+            ChainOfThoughtGenerator
+            → HiddenCoTSampleCollector.collect()
+            → to_sft_items()
+            → SFTDataset(data=items, tokenizer=tokenizer)
+            → SFTTrainer.train()
+
+        ``HiddenCoTAdapter`` enforces the ``<think>...</think>`` contract at
+        collection time.  Serves as the ``HiddenCoTAdapter.answer_only`` contract
+        at inference time — the policy learns what to generate, and the adapter
+        strips it before serving.
+
+        Args:
+            data: List of prompt strings or dicts with ``'prompt'`` key.
+            config: ``SFTConfig`` for the training run.
+            kwargs:
+                - ``cot_generator``: ``ChainOfThoughtGenerator`` instance.
+                  If None, creates one from ``self.policy_model``.
+                - ``max_thinking_tokens`` (int, default 512).
+                - ``max_answer_tokens`` (int, default 256).
+                - ``batch_size`` (int, default 8).
+        """
+        if config is None:
+            config = SFTConfig(output_dir=str(self.output_dir / "hidden_cot_sft"))
+
+        prompts: List[str] = [
+            d["prompt"] if isinstance(d, dict) else d for d in data
+        ]
+
+        cot_generator = kwargs.get("cot_generator")
+        if cot_generator is None:
+            from inference_optimizations import ChainOfThoughtGenerator, ChainOfThoughtConfig  # type: ignore
+            cot_generator = ChainOfThoughtGenerator(
+                policy_model=self.policy_model,
+                tokenizer=self.tokenizer,
+                config=ChainOfThoughtConfig(
+                    max_thinking_tokens=kwargs.get("max_thinking_tokens", 512),
+                    max_answer_tokens=kwargs.get("max_answer_tokens", 256),
+                    temperature=getattr(config, "temperature", 0.8),
+                    strip_thinking=False,  # keep full sequence for training
+                ),
+            )
+
+        from inference_protocols import HiddenCoTSampleCollector  # type: ignore
+        collector = HiddenCoTSampleCollector(generator=cot_generator)
+        samples = collector.collect(
+            prompts,
+            max_thinking_tokens=kwargs.get("max_thinking_tokens", 512),
+            max_answer_tokens=kwargs.get("max_answer_tokens", 256),
+        )
+        if samples:
+            valid_samples = [sample for sample in samples if sample.tag_valid]
+            default_recorder.record_hidden_cot(
+                n_generated=len(samples),
+                n_valid=len(valid_samples),
+                mean_reasoning_tokens=(
+                    sum(sample.reasoning_tokens for sample in valid_samples) / len(valid_samples)
+                    if valid_samples else float("nan")
+                ),
+                mean_answer_tokens=(
+                    sum(sample.answer_tokens for sample in valid_samples) / len(valid_samples)
+                    if valid_samples else float("nan")
+                ),
+            )
+
+        sft_items = collector.to_sft_items(samples)
+        if not sft_items:
+            logger.warning("_run_hidden_cot_sft: no valid CoT samples collected; aborting SFT stage.")
+            return {"hidden_cot_sft": {"valid_samples": 0}}
+
+        logger.info(
+            "_run_hidden_cot_sft: collected %d valid hidden-CoT samples from %d prompts.",
+            len(sft_items), len(prompts),
+        )
+
+        dataset = SFTDataset(sft_items, self.tokenizer, max_length=config.max_length)
+        batch_size = kwargs.get("batch_size", getattr(config, "batch_size", 8))
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+
+        trainer = SFTTrainer(
+            model=self.policy_model,
+            tokenizer=self.tokenizer,
+            config=config,
+            device_manager=self.device_manager,
+        )
+        result = trainer.train(dataloader)
+        result["hidden_cot_sft"] = {
+            "valid_samples": len(sft_items),
+            "total_prompts": len(prompts),
+        }
+        return result
+
     def run_full_pipeline(
         self,
         sft_data: List[Dict[str, str]],
         preference_data: List[Dict[str, str]],
-        method: str = 'dpo',
+        method: Optional[str] = None,
         sft_config: Optional[SFTConfig] = None,
         rm_config: Optional[RewardModelConfig] = None,
         po_config: Optional[Union[DPOConfig, GRPOConfig, SimPOConfig, KTOConfig, PPOConfig]] = None,
@@ -7455,6 +8439,10 @@ class RLHFOrchestrator:
             Dictionary with training history and final models
         """
         start_time = time.time()
+        if not isinstance(method, str) or not method.strip():
+            raise ValueError(
+                "run_full_pipeline requires an explicit policy optimization method; no default stage is assumed."
+            )
 
         logger.info("=" * 80)
         logger.info("STARTING FULL RLHF PIPELINE")

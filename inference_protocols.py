@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
@@ -126,8 +127,27 @@ class PolicyAdapter:
         self._device = device
 
     def _inner_model(self) -> nn.Module:
-        """Resolve raw HF model when wrapped by rlhf.PolicyModel."""
-        return getattr(self._model, "model", self._model)
+        """
+        Resolve the callable policy surface.
+
+        For rlhf.PolicyModel wrappers, unwrap exactly one level to reach the
+        HF causal-lm module. For already-raw HF causal-lm models, keep the
+        top-level module so logits/lm_head remain available.
+        """
+        candidate = getattr(self._model, "model", None)
+        if candidate is None:
+            return self._model
+
+        # rlhf.PolicyModel exposes get_log_probs and should be unwrapped once.
+        if hasattr(self._model, "get_log_probs"):
+            return candidate
+
+        # Raw HF causal LM modules also expose `.model`, but unwrapping them
+        # drops lm_head/logits and breaks search scorers.
+        if hasattr(self._model, "lm_head"):
+            return self._model
+
+        return candidate
 
     @classmethod
     def from_rlhf_model(
@@ -841,3 +861,246 @@ class ProcessRewardModelAdapter:
             Scalar reward as float.
         """
         return self.score(text, "")
+
+    def score_branch_preference(
+        self,
+        steps_a: List[float],
+        steps_b: List[float],
+        mode: str = "prm_min",
+    ) -> float:
+        """Bradley-Terry preference probability P(branch_a > branch_b).
+
+        Compares two reasoning branches using their per-step PRM scores (as
+        returned by ``score_steps()``).  Aggregates each branch to a scalar
+        via ``mode``, then returns ``sigmoid(agg_a - agg_b)`` — the canonical
+        Bradley-Terry pairwise preference probability.
+
+        Used by Tree-GRPO to drive preference-based process reward normalisation
+        across sibling branches at the same MCTS parent node.
+
+        Args:
+            steps_a: Per-step PRM scores for branch A (from ``score_steps()``).
+            steps_b: Per-step PRM scores for branch B (from ``score_steps()``).
+            mode: Aggregation strategy applied to both lists before comparison.
+                  ``'prm_min'`` (default) — min(steps), most conservative,
+                  matches PRM-Min aggregation from the Q* literature (a proof
+                  is only as strong as its weakest step).
+                  ``'prm_mean'`` — arithmetic mean.
+                  ``'prm_last'`` — last step score only.
+
+        Returns:
+            Scalar in [0, 1]: probability that branch A is preferred over B.
+            0.5 means indifference; >0.5 means A is preferred.
+        """
+        if not steps_a or not steps_b:
+            return 0.5
+
+        def _aggregate(steps: List[float]) -> float:
+            if mode == "prm_min":
+                return min(steps)
+            if mode == "prm_mean":
+                return sum(steps) / len(steps)
+            if mode == "prm_last":
+                return steps[-1]
+            raise ValueError(
+                f"Unknown mode '{mode}'. Choose 'prm_min', 'prm_mean', or 'prm_last'."
+            )
+
+        agg_a = _aggregate(steps_a)
+        agg_b = _aggregate(steps_b)
+        return float(torch.sigmoid(torch.tensor(agg_a - agg_b, dtype=torch.float32)))
+
+
+# =============================================================================
+# HIDDEN-CoT SAMPLE COLLECTION
+# =============================================================================
+
+@dataclass
+class HiddenCoTSample:
+    """One training-ready hidden-chain-of-thought sample.
+
+    full_sequence is the SFT/GRPO training target: the policy must learn to
+    emit ``<think>reasoning</think>answer`` in the completion token stream.
+    answer_only is what HiddenCoTAdapter serves at inference time.
+
+    Fields:
+        prompt:           Original user prompt.
+        full_sequence:    ``prompt + <think>thinking</think>answer`` — training target.
+        answer_only:      ``prompt + answer`` — serving target (thinking stripped).
+        thinking:         The raw thinking text between tags, for diagnostics.
+        reasoning_tokens: Approximate token count of the thinking section.
+        answer_tokens:    Approximate token count of the answer section.
+        thinking_score:   Optional PRM score of the thinking section (from
+                          ``ChainOfThoughtGenerator`` if a PRM scorer is configured).
+        tag_valid:        True when ``HiddenCoTAdapter._validate_hidden_cot()`` passed.
+    """
+    prompt: str
+    full_sequence: str
+    answer_only: str
+    thinking: str
+    reasoning_tokens: int
+    answer_tokens: int
+    thinking_score: Optional[float] = None
+    tag_valid: bool = True
+
+
+class HiddenCoTSampleCollector:
+    """Bridge ChainOfThoughtGenerator output to training-ready HiddenCoTSample objects.
+
+    This class is the contract-enforcement layer between the two-phase CoT
+    generator in ``inference_optimizations.py`` and the training loop in
+    ``rlhf.py``.  Contract is enforced at collection time via ``HiddenCoTAdapter``
+    so that invalid samples are caught before they enter a training dataset.
+
+    The primary training path for collected samples::
+
+        collector.collect(prompts) -> List[HiddenCoTSample]
+        collector.to_sft_items(samples) -> List[{'prompt': str, 'response': str}]
+        SFTDataset(data=items, tokenizer=...)
+
+    The response in each SFT item is ``full_sequence[len(prompt):]``, which is
+    exactly the ``<think>...</think>answer`` suffix.  Because ``SFTDataset``
+    masks the prompt tokens from the loss, the policy is trained exclusively
+    to generate the hidden-CoT + answer structure — matching what
+    ``HiddenCoTAdapter`` will strip at serve time.
+
+    For RL training (GRPO / Tree-GRPO), pass the ``full_sequence`` as the
+    completion and score the ``answer_only`` portion with the reward function.
+    Gradient flows through all tokens including thinking tokens — the model
+    learns to reason better via RL advantage signal.
+    """
+
+    def __init__(
+        self,
+        generator: Any,  # ChainOfThoughtGenerator from inference_optimizations
+        think_start_tag: str = DEFAULT_THINK_START_TAG,
+        think_end_tag: str = DEFAULT_THINK_END_TAG,
+    ) -> None:
+        self._generator = generator
+        self._think_start_tag = think_start_tag
+        self._think_end_tag = think_end_tag
+        self._adapter = HiddenCoTAdapter(
+            generator,
+            think_start_tag=think_start_tag,
+            think_end_tag=think_end_tag,
+        )
+
+    def collect(
+        self,
+        prompts: List[str],
+        max_thinking_tokens: int = 512,
+        max_answer_tokens: int = 256,
+        skip_invalid: bool = True,
+    ) -> List[HiddenCoTSample]:
+        """Generate hidden-CoT samples for each prompt.
+
+        Calls ``HiddenCoTAdapter.generate_with_hidden_cot()`` per prompt.
+        Contract (tag presence, ordering) is validated by the adapter.
+
+        Args:
+            prompts:             List of prompt strings.
+            max_thinking_tokens: Token budget for the thinking section.
+            max_answer_tokens:   Token budget for the answer section.
+            skip_invalid:        If True, drop samples that fail tag validation.
+                                 If False, include them with ``tag_valid=False``
+                                 for diagnostic purposes.
+
+        Returns:
+            List of HiddenCoTSample objects, ordered as prompts.
+        """
+        samples: List[HiddenCoTSample] = []
+        for prompt in prompts:
+            tag_valid = True
+            try:
+                full_sequence, answer_only = self._adapter.generate_with_hidden_cot(
+                    prompt,
+                    max_thinking_tokens=max_thinking_tokens,
+                    max_answer_tokens=max_answer_tokens,
+                )
+            except (InferenceProtocolError, Exception) as exc:
+                logger.warning("HiddenCoTSampleCollector: generation failed for prompt: %s", exc)
+                tag_valid = False
+                if skip_invalid:
+                    continue
+                full_sequence = prompt
+                answer_only = prompt
+
+            # Extract thinking text between tags for diagnostics.
+            thinking = ""
+            start_idx = full_sequence.find(self._think_start_tag)
+            end_idx = full_sequence.find(self._think_end_tag)
+            if start_idx >= 0 and end_idx > start_idx:
+                thinking = full_sequence[start_idx + len(self._think_start_tag):end_idx]
+
+            # Approximate token counts (character/4 is a rough estimate;
+            # accurate counts require the tokenizer which we don't hold here).
+            reasoning_tokens = max(1, len(thinking) // 4)
+            answer_suffix = full_sequence[full_sequence.find(self._think_end_tag) + len(self._think_end_tag):] if tag_valid else answer_only
+            answer_tokens = max(1, len(answer_suffix) // 4)
+
+            # Extract thinking_score without a second generation pass.
+            # ChainOfThoughtGenerator.generate() already ran inside the adapter's
+            # _call_generic_generate() path.  We can't recover its return value
+            # here without refactoring the adapter, so we call generate() only
+            # when the generator exposes thinking_score AND the adapter used the
+            # native path (meaning it called generate_with_hidden_cot, not generic
+            # generate).  For the generic-generate path the adapter already ran
+            # generate() once; we read thinking_score from a fresh call ONLY when
+            # tag_valid is False (generation failed anyway, no wasted compute) or
+            # when the generator advertises a zero-cost score attribute.
+            thinking_score: Optional[float] = None
+            if tag_valid and hasattr(self._generator, "generate"):
+                # Avoid a second full generation pass.  If the generator caches
+                # its last result or exposes a last_thinking_score attribute, use
+                # that.  Otherwise leave thinking_score as None — it is optional
+                # diagnostic data, not required for training.
+                _last = getattr(self._generator, "_last_result", None)
+                if isinstance(_last, dict):
+                    ts = _last.get("thinking_score")
+                    if ts is not None:
+                        thinking_score = float(ts)
+
+            sample = HiddenCoTSample(
+                prompt=prompt,
+                full_sequence=full_sequence,
+                answer_only=answer_only,
+                thinking=thinking,
+                reasoning_tokens=reasoning_tokens,
+                answer_tokens=answer_tokens,
+                thinking_score=thinking_score,
+                tag_valid=tag_valid,
+            )
+            if not tag_valid and skip_invalid:
+                continue
+            samples.append(sample)
+
+        return samples
+
+    def to_sft_items(
+        self,
+        samples: List[HiddenCoTSample],
+    ) -> List[Dict[str, str]]:
+        """Convert HiddenCoTSample objects to SFTDataset-compatible dicts.
+
+        ``SFTDataset`` expects ``{'prompt': str, 'response': str}``.  The
+        response is ``full_sequence[len(prompt):]`` — the
+        ``<think>...</think>answer`` suffix.  Only samples where ``tag_valid``
+        is True are included; invalid samples are silently skipped.
+
+        The resulting list feeds directly into::
+
+            SFTDataset(data=items, tokenizer=tokenizer, max_length=...)
+
+        No schema translation needed.  The policy learns to generate the
+        full ``<think>...</think>answer`` completion, and ``HiddenCoTAdapter``
+        strips the thinking section at serve time.
+        """
+        items: List[Dict[str, str]] = []
+        for s in samples:
+            if not s.tag_valid:
+                continue
+            response = s.full_sequence[len(s.prompt):]
+            if not response.strip():
+                continue
+            items.append({"prompt": s.prompt, "response": response})
+        return items

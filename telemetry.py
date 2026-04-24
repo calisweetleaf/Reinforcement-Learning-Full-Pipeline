@@ -100,12 +100,36 @@ class TelemetryRecorder:
             "prm_calls": 0,
             "prm_steps_scored": 0,
             "prm_reranks": 0,
+            # Tree-GRPO / search-training counters
+            "tree_rollouts": 0,
+            "grpo_steps": 0,
+            "tree_grpo_steps": 0,
+            "replay_samples_used": 0,
+            "hidden_cot_valid": 0,
+            "hidden_cot_invalid": 0,
+            "search_budget_total": 0,
+            "search_budget_used": 0,
         }
         self._prm_score_reservoir: _Reservoir = _Reservoir()
+        self._tree_grpo_advantage_reservoir: _Reservoir = _Reservoir()
         self._memory_snapshots: List[Dict[str, Any]] = []
         self._events: List[Dict[str, Any]] = []
         self._tb_writer = tb_writer
         self._global_step = 0
+
+    def _safe_add_scalar(self, name: str, value: Any, step: Optional[int] = None) -> None:
+        """Best-effort TensorBoard scalar logging."""
+        if self._tb_writer is None:
+            return
+        try:
+            scalar = float(value)
+        except Exception:
+            return
+        step_value = self._global_step if step is None else step
+        try:
+            self._tb_writer.add_scalar(name, scalar, step_value)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Recording primitives
@@ -117,11 +141,7 @@ class TelemetryRecorder:
             if name not in self._latencies:
                 self._latencies[name] = _Reservoir()
         self._latencies[name].add(seconds)
-        if self._tb_writer is not None:
-            try:
-                self._tb_writer.add_scalar(f"latency/{name}_s", seconds, self._global_step)
-            except Exception:
-                pass
+        self._safe_add_scalar(f"latency/{name}_s", seconds)
 
     def record_tokens(self, count: int):
         """Record number of tokens generated."""
@@ -191,11 +211,193 @@ class TelemetryRecorder:
         import math as _math
         if _math.isfinite(min_step_score):
             self._prm_score_reservoir.add(min_step_score)
+            self._safe_add_scalar("prm/min_step_score", min_step_score, self._counters.get("prm_calls", 0))
+        if _math.isfinite(outcome_score):
+            self._safe_add_scalar("prm/outcome_score", outcome_score, self._counters.get("prm_calls", 0))
+        self._safe_add_scalar("prm/steps_scored", n_steps, self._counters.get("prm_calls", 0))
         self.record_event("prm_score", {
             "mode": mode,
             "n_steps": n_steps,
             "min_step_score": min_step_score,
             "outcome_score": outcome_score,
+        })
+
+    def record_tree_rollout(
+        self,
+        n_prompts: int,
+        n_samples: int,
+        n_groups: int,
+        mean_reward: float,
+        mean_depth: float,
+        source: str = "mcts",
+    ) -> None:
+        """Record one tree-rollout collection pass.
+
+        Args:
+            n_prompts:   Number of prompts searched.
+            n_samples:   Total RolloutSample objects produced.
+            n_groups:    Number of sibling groups (distinct parent nodes).
+            mean_reward: Mean reward across all samples.
+            mean_depth:  Mean tree depth of collected samples.
+            source:      Generator used — ``'mcts'``, ``'astar'``, or ``'mixed'``.
+        """
+        with self._lock:
+            self._counters["tree_rollouts"] += n_prompts
+            step = self._counters["tree_rollouts"]
+        self._safe_add_scalar("tree_rollout/n_prompts", n_prompts, step)
+        self._safe_add_scalar("tree_rollout/n_samples", n_samples, step)
+        self._safe_add_scalar("tree_rollout/n_groups", n_groups, step)
+        self._safe_add_scalar("tree_rollout/mean_reward", mean_reward, step)
+        self._safe_add_scalar("tree_rollout/mean_depth", mean_depth, step)
+        self.record_event("tree_rollout", {
+            "n_prompts": n_prompts,
+            "n_samples": n_samples,
+            "n_groups": n_groups,
+            "mean_reward": mean_reward,
+            "mean_depth": mean_depth,
+            "source": source,
+        })
+
+    def record_grpo_step(
+        self,
+        mean_advantage: float,
+        std_advantage: float,
+        mean_reward: float,
+        kl_div: float,
+        loss: float,
+    ) -> None:
+        """Record one flat GRPO training step."""
+        with self._lock:
+            self._counters["grpo_steps"] += 1
+            step = self._counters["grpo_steps"]
+        self._safe_add_scalar("grpo/mean_advantage", mean_advantage, step)
+        self._safe_add_scalar("grpo/std_advantage", std_advantage, step)
+        self._safe_add_scalar("grpo/mean_reward", mean_reward, step)
+        self._safe_add_scalar("grpo/kl_div", kl_div, step)
+        self._safe_add_scalar("grpo/loss", loss, step)
+        self.record_event("grpo_step", {
+            "mean_advantage": mean_advantage,
+            "std_advantage": std_advantage,
+            "mean_reward": mean_reward,
+            "kl_div": kl_div,
+            "loss": loss,
+        })
+
+    def record_tree_grpo_step(
+        self,
+        mean_sibling_advantage: float,
+        n_groups_used: int,
+        depth_weighted_mean_reward: float,
+        kl_div: float,
+        loss: float,
+    ) -> None:
+        """Record one Tree-GRPO training step with sibling-comparison metrics."""
+        with self._lock:
+            self._counters["tree_grpo_steps"] += 1
+            step = self._counters["tree_grpo_steps"]
+        self._tree_grpo_advantage_reservoir.add(mean_sibling_advantage)
+        self._safe_add_scalar("tree_grpo/mean_sibling_advantage", mean_sibling_advantage, step)
+        self._safe_add_scalar("tree_grpo/n_groups_used", n_groups_used, step)
+        self._safe_add_scalar("tree_grpo/depth_weighted_mean_reward", depth_weighted_mean_reward, step)
+        self._safe_add_scalar("tree_grpo/kl_div", kl_div, step)
+        self._safe_add_scalar("tree_grpo/loss", loss, step)
+        self.record_event("tree_grpo_step", {
+            "mean_sibling_advantage": mean_sibling_advantage,
+            "n_groups_used": n_groups_used,
+            "depth_weighted_mean_reward": depth_weighted_mean_reward,
+            "kl_div": kl_div,
+            "loss": loss,
+        })
+
+    def record_replay_event(
+        self,
+        mode: str,
+        buffer_size: int,
+        n_sampled: int,
+        priority_type: str,
+    ) -> None:
+        """Record a replay buffer sample event.
+
+        Args:
+            mode:          ``'add'`` or ``'sample'``.
+            buffer_size:   Current buffer size after operation.
+            n_sampled:     Number of samples drawn (0 for ``'add'`` mode).
+            priority_type: Strategy used — ``'uniform'``, ``'hard_negative'``,
+                           or ``'frontier'``.
+        """
+        with self._lock:
+            self._counters["replay_samples_used"] += n_sampled
+            step = self._counters["replay_samples_used"]
+        self._safe_add_scalar("replay/buffer_size", buffer_size, step)
+        self._safe_add_scalar("replay/n_sampled", n_sampled, step)
+        self.record_event("replay", {
+            "mode": mode,
+            "buffer_size": buffer_size,
+            "n_sampled": n_sampled,
+            "priority_type": priority_type,
+        })
+
+    def record_hidden_cot(
+        self,
+        n_generated: int,
+        n_valid: int,
+        mean_reasoning_tokens: float = float("nan"),
+        mean_answer_tokens: float = float("nan"),
+    ) -> None:
+        """Record hidden-CoT sample collection statistics.
+
+        Args:
+            n_generated:           Total samples attempted.
+            n_valid:               Samples that passed tag validation.
+            mean_reasoning_tokens: Mean thinking-section token count.
+            mean_answer_tokens:    Mean answer-section token count.
+        """
+        n_invalid = n_generated - n_valid
+        with self._lock:
+            self._counters["hidden_cot_valid"] += n_valid
+            self._counters["hidden_cot_invalid"] += n_invalid
+            step = self._counters["hidden_cot_valid"] + self._counters["hidden_cot_invalid"]
+        self._safe_add_scalar("hidden_cot/n_generated", n_generated, step)
+        self._safe_add_scalar("hidden_cot/n_valid", n_valid, step)
+        self._safe_add_scalar("hidden_cot/validity_rate", (n_valid / n_generated) if n_generated > 0 else float("nan"), step)
+        self._safe_add_scalar("hidden_cot/mean_reasoning_tokens", mean_reasoning_tokens, step)
+        self._safe_add_scalar("hidden_cot/mean_answer_tokens", mean_answer_tokens, step)
+        self.record_event("hidden_cot_collection", {
+            "n_generated": n_generated,
+            "n_valid": n_valid,
+            "n_invalid": n_invalid,
+            "mean_reasoning_tokens": mean_reasoning_tokens,
+            "mean_answer_tokens": mean_answer_tokens,
+        })
+
+    def record_search_budget(
+        self,
+        generator_type: str,
+        n_expansions: int,
+        budget_total: int,
+        mean_depth: float = float("nan"),
+    ) -> None:
+        """Record tree-search budget usage for one generation call.
+
+        Args:
+            generator_type: ``'mcts'`` or ``'astar'``.
+            n_expansions:   Node expansions in this call.
+            budget_total:   Maximum expansions allowed (from config).
+            mean_depth:     Mean depth of expanded nodes.
+        """
+        with self._lock:
+            self._counters["search_budget_used"] += n_expansions
+            self._counters["search_budget_total"] += budget_total
+            step = self._counters["search_budget_total"]
+        self._safe_add_scalar("search_budget/used", n_expansions, step)
+        self._safe_add_scalar("search_budget/total", budget_total, step)
+        self._safe_add_scalar("search_budget/mean_depth", mean_depth, step)
+        self._safe_add_scalar("search_budget/utilisation", (n_expansions / budget_total) if budget_total > 0 else float("nan"), step)
+        self.record_event("search_budget", {
+            "generator_type": generator_type,
+            "n_expansions": n_expansions,
+            "budget_total": budget_total,
+            "mean_depth": mean_depth,
         })
 
     def record_memory_snapshot(self, phase: str) -> Dict[str, Any]:
@@ -284,6 +486,21 @@ class TelemetryRecorder:
         cache_hit_rate = cache_hits / cache_total if cache_total > 0 else float("nan")
 
         prm_res = self._prm_score_reservoir
+        tg_adv_res = self._tree_grpo_advantage_reservoir
+
+        hidden_cot_valid = counters.get("hidden_cot_valid", 0)
+        hidden_cot_invalid = counters.get("hidden_cot_invalid", 0)
+        hidden_cot_total = hidden_cot_valid + hidden_cot_invalid
+        hidden_cot_validity_rate = (
+            hidden_cot_valid / hidden_cot_total if hidden_cot_total > 0 else float("nan")
+        )
+
+        budget_total = counters.get("search_budget_total", 0)
+        budget_used = counters.get("search_budget_used", 0)
+        budget_utilisation = (
+            budget_used / budget_total if budget_total > 0 else float("nan")
+        )
+
         return {
             "counters": counters,
             "latency": latency_stats,
@@ -297,6 +514,18 @@ class TelemetryRecorder:
                 "reranks": counters.get("prm_reranks", 0),
                 "min_step_score_mean": prm_res.mean(),
                 "min_step_score_p50": prm_res.quantile(0.5),
+            },
+            "tree_search": {
+                "tree_rollouts": counters.get("tree_rollouts", 0),
+                "grpo_steps": counters.get("grpo_steps", 0),
+                "tree_grpo_steps": counters.get("tree_grpo_steps", 0),
+                "replay_samples_used": counters.get("replay_samples_used", 0),
+                "tree_grpo_advantage_mean": tg_adv_res.mean(),
+                "tree_grpo_advantage_p50": tg_adv_res.quantile(0.5),
+                "hidden_cot_valid": hidden_cot_valid,
+                "hidden_cot_invalid": hidden_cot_invalid,
+                "hidden_cot_validity_rate": hidden_cot_validity_rate,
+                "search_budget_utilisation": budget_utilisation,
             },
             "memory": list(self._memory_snapshots),
             "events": list(self._events),
@@ -319,6 +548,7 @@ class TelemetryRecorder:
             for k in self._counters:
                 self._counters[k] = 0
             self._prm_score_reservoir = _Reservoir()
+            self._tree_grpo_advantage_reservoir = _Reservoir()
             self._memory_snapshots.clear()
             self._events.clear()
 

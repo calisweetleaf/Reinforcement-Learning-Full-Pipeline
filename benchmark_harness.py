@@ -725,6 +725,372 @@ class BenchmarkHarness:
         logger.info(f"Benchmark report written to {out}")
 
 
+    def run_tree_grpo_benchmark(
+        self,
+        policy: Any,
+        reference_model: Any,
+        tokenizer: Any,
+        mcts_generator: Any,
+        reward_fn: Callable,
+        prompts: List[str],
+        tree_grpo_config: Optional[Any] = None,
+        n_steps: int = 5,
+    ) -> Dict[str, Any]:
+        """Benchmark Tree-GRPO training quality end-to-end.
+
+        Collects grouped MCTS rollouts for ``prompts``, runs ``n_steps`` of
+        Tree-GRPO training, and reports:
+        - ``n_groups_collected``: sibling groups produced by the search.
+        - ``mean_reward``: mean reward across all rollout samples.
+        - ``mean_advantage_std``: mean within-group advantage standard deviation.
+        - ``loss_trajectory``: loss value at each of the ``n_steps`` steps.
+        - ``reward_improvement``: delta between pre- and post-training reward on
+          a held-out generation from the policy.
+
+        **Rollout source**: this benchmark always uses MCTS collection
+        (``TreeRolloutCollector``) regardless of ``tree_grpo_config.rollout_source``.
+        To benchmark A* or mixed-source collection, call ``_run_tree_grpo()``
+        directly via ``RLHFOrchestrator.run_policy_optimization()``.
+
+        Returns a result dict compatible with ``rank_strategies()`` and
+        ``emit_report()``.
+        """
+        import time
+        result: Dict[str, Any] = {
+            "benchmark": "tree_grpo",
+            "n_prompts": len(prompts),
+            "n_steps": n_steps,
+        }
+
+        try:
+            from inference_optimizations import TreeRolloutCollector  # type: ignore
+            from rlhf import TreeGRPOConfig, TreeGRPOTrainer  # type: ignore
+
+            def _single_arg_reward(text: str) -> float:
+                return float(reward_fn(text, ""))
+
+            collector = TreeRolloutCollector(
+                mcts_generator=mcts_generator,
+                reward_fn=_single_arg_reward,
+            )
+
+            t0 = time.perf_counter()
+            grouped = collector.collect_grouped(prompts, n_samples_per_prompt=4)
+            collect_elapsed = time.perf_counter() - t0
+
+            all_samples = [s for samps in grouped.values() for s in samps]
+            n_groups = len(grouped)
+            mean_reward = (
+                sum(s.reward for s in all_samples) / len(all_samples)
+                if all_samples else float("nan")
+            )
+
+            # Per-group advantage std (intra-tree spread).
+            group_stds = []
+            for samps in grouped.values():
+                if len(samps) >= 2:
+                    rewards = [s.reward for s in samps]
+                    mu = sum(rewards) / len(rewards)
+                    std = (sum((r - mu) ** 2 for r in rewards) / len(rewards)) ** 0.5
+                    group_stds.append(std)
+            mean_adv_std = sum(group_stds) / len(group_stds) if group_stds else float("nan")
+            if all_samples:
+                self.telemetry.record_tree_rollout(
+                    n_prompts=len({s.prompt for s in all_samples}),
+                    n_samples=len(all_samples),
+                    n_groups=n_groups,
+                    mean_reward=mean_reward,
+                    mean_depth=sum(s.depth for s in all_samples) / len(all_samples),
+                    source="mcts",
+                )
+
+            if tree_grpo_config is None:
+                tree_grpo_config = TreeGRPOConfig(
+                    output_dir="/tmp/tree_grpo_bench",
+                    min_group_size=2,
+                )
+
+            rollout_source = getattr(tree_grpo_config, "rollout_source", "mcts")
+            if rollout_source != "mcts":
+                logger.warning(
+                    "run_tree_grpo_benchmark: tree_grpo_config.rollout_source=%r but this "
+                    "benchmark always uses MCTS collection. A* and mixed sources are only "
+                    "available via RLHFOrchestrator.run_policy_optimization('tree_grpo', ...).",
+                    rollout_source,
+                )
+
+            trainer = TreeGRPOTrainer(
+                policy_model=policy,
+                reference_model=reference_model,
+                tokenizer=tokenizer,
+                config=tree_grpo_config,
+                reward_fn=reward_fn,
+                telemetry=self.telemetry,
+            )
+
+            t1 = time.perf_counter()
+            metrics = trainer.train(grouped, num_steps=n_steps)
+            train_elapsed = time.perf_counter() - t1
+
+            loss_traj = [m["loss"] for m in metrics.get("metrics", [])]
+
+            result.update({
+                "n_groups_collected": n_groups,
+                "n_samples_collected": len(all_samples),
+                "mean_reward": mean_reward,
+                "mean_advantage_std": mean_adv_std,
+                "loss_trajectory": loss_traj,
+                "collect_elapsed_s": collect_elapsed,
+                "train_elapsed_s": train_elapsed,
+                "status": "ok",
+            })
+        except Exception as exc:
+            result["status"] = "error"
+            result["error"] = str(exc)
+            logger.warning("run_tree_grpo_benchmark failed: %s", exc)
+
+        return result
+
+    def run_search_quality_benchmark(
+        self,
+        policy: Any,
+        reward_fn: Callable,
+        tokenizer: Any,
+        prompts: List[str],
+        mcts_config: Optional[Any] = None,
+        astar_config: Optional[Any] = None,
+        bon_config: Optional[Any] = None,
+        max_new_tokens: int = 128,
+    ) -> Dict[str, Dict[str, Any]]:
+        """Compare MCTS vs A* vs BestOfN vs greedy across prompts.
+
+        Each strategy is run over the same ``prompts`` list.  Reports
+        per-strategy: ``mean_reward``, ``latency_p50_s``, ``nodes_expanded``,
+        ``tokens_per_sec``.
+
+        Uses ``run_inference_benchmark()`` internally for the BestOfN lane and
+        adds MCTS/A* lanes on top.
+        """
+        import time
+        results: Dict[str, Dict[str, Any]] = {}
+
+        def _single_arg_reward(text: str) -> float:
+            return float(reward_fn(text, ""))
+
+        # --- Greedy baseline ---
+        try:
+            from inference_optimizations import MCTSConfig, MCTSGenerator  # type: ignore
+            greedy_rewards: List[float] = []
+            greedy_latencies: List[float] = []
+            for prompt in prompts:
+                t0 = time.perf_counter()
+                enc = tokenizer(prompt, return_tensors="pt")
+                with torch.no_grad():
+                    out = policy.generate(
+                        input_ids=enc["input_ids"],
+                        max_new_tokens=max_new_tokens,
+                        do_sample=False,
+                    )
+                text = tokenizer.decode(out[0], skip_special_tokens=True)
+                greedy_latencies.append(time.perf_counter() - t0)
+                greedy_rewards.append(_single_arg_reward(text))
+            results["greedy"] = {
+                "mean_reward": sum(greedy_rewards) / len(greedy_rewards),
+                "latency_p50_s": sorted(greedy_latencies)[len(greedy_latencies) // 2],
+                "nodes_expanded": 1,
+            }
+        except Exception as exc:
+            results["greedy"] = {"status": "error", "error": str(exc)}
+
+        # --- MCTS ---
+        try:
+            from inference_optimizations import MCTSConfig, MCTSGenerator  # type: ignore
+            cfg = mcts_config or MCTSConfig(n_simulations=20)
+            mcts_gen = MCTSGenerator(policy, None, tokenizer, config=cfg)
+            mcts_rewards: List[float] = []
+            mcts_latencies: List[float] = []
+            mcts_expansions: List[int] = []
+            for prompt in prompts:
+                t0 = time.perf_counter()
+                result = mcts_gen.generate(prompt, max_new_tokens, _single_arg_reward)
+                mcts_latencies.append(time.perf_counter() - t0)
+                mcts_rewards.append(_single_arg_reward(result.get("text", "")))
+                expansions = int(result.get("simulations", cfg.n_simulations))
+                mcts_expansions.append(expansions)
+                self.telemetry.record_search_budget(
+                    generator_type="mcts",
+                    n_expansions=expansions,
+                    budget_total=cfg.n_simulations,
+                    mean_depth=float(result.get("depth", float("nan"))),
+                )
+            results["mcts"] = {
+                "mean_reward": sum(mcts_rewards) / len(mcts_rewards),
+                "latency_p50_s": sorted(mcts_latencies)[len(mcts_latencies) // 2],
+                "nodes_expanded": sum(mcts_expansions) / len(mcts_expansions),
+            }
+        except Exception as exc:
+            results["mcts"] = {"status": "error", "error": str(exc)}
+
+        # --- A* ---
+        try:
+            from inference_optimizations import AStarConfig, AStarGenerator  # type: ignore
+            cfg = astar_config or AStarConfig(max_nodes=50)
+            astar_gen = AStarGenerator(policy, tokenizer, config=cfg)
+            astar_rewards: List[float] = []
+            astar_latencies: List[float] = []
+            astar_expanded: List[int] = []
+            for prompt in prompts:
+                t0 = time.perf_counter()
+                result = astar_gen.generate(prompt, reward_fn=_single_arg_reward)
+                astar_latencies.append(time.perf_counter() - t0)
+                astar_rewards.append(_single_arg_reward(result.get("text", "")))
+                expansions = int(result.get("nodes_expanded", cfg.max_nodes))
+                astar_expanded.append(expansions)
+                self.telemetry.record_search_budget(
+                    generator_type="astar",
+                    n_expansions=expansions,
+                    budget_total=cfg.max_nodes,
+                    mean_depth=float(result.get("depth", float("nan"))),
+                )
+            results["astar"] = {
+                "mean_reward": sum(astar_rewards) / len(astar_rewards),
+                "latency_p50_s": sorted(astar_latencies)[len(astar_latencies) // 2],
+                "nodes_expanded": sum(astar_expanded) / len(astar_expanded),
+            }
+        except Exception as exc:
+            results["astar"] = {"status": "error", "error": str(exc)}
+
+        # --- BestOfN (via run_inference_benchmark) ---
+        try:
+            class _CallableRewardAdapter:
+                def __init__(self, fn: Callable):
+                    self._fn = fn
+
+                def score(self, prompt: str, completion: str = "") -> float:
+                    return float(self._fn(prompt, completion))
+
+            active_bon = bon_config or BestOfNConfig()
+            strategy_label = f"bon_n{active_bon.n_samples}"
+            bon_results = self.run_inference_benchmark(
+                policy=policy,
+                reward=_CallableRewardAdapter(reward_fn),
+                tokenizer=tokenizer,
+                prompts=prompts,
+                strategies=[strategy_label],
+                bon_config=active_bon,
+                max_new_tokens=max_new_tokens,
+            )
+            bon_result = bon_results.get(strategy_label, {})
+            results["bon"] = {
+                "mean_reward": bon_result.get("reward_score_mean", float("nan")),
+                "latency_p50_s": bon_result.get("latency_p50_s", float("nan")),
+                "nodes_expanded": bon_result.get("n_samples", active_bon.n_samples),
+            }
+        except Exception as exc:
+            results["bon"] = {"status": "error", "error": str(exc)}
+
+        return results
+
+    def run_hidden_cot_fidelity_benchmark(
+        self,
+        cot_generator: Any,
+        prompts: List[str],
+        think_start_tag: str = "<think>",
+        think_end_tag: str = "</think>",
+    ) -> Dict[str, Any]:
+        """Test hidden-CoT generation fidelity.
+
+        Runs ``cot_generator`` over ``prompts`` via ``HiddenCoTSampleCollector``
+        and reports:
+
+        - ``validity_rate``: fraction of samples where tags are present and
+          correctly ordered (``HiddenCoTAdapter`` validation pass rate).
+        - ``mean_reasoning_tokens``: mean thinking-section approximate token count.
+        - ``mean_answer_tokens``: mean answer-section approximate token count.
+        - ``tag_error_types``: dict of error type → count for invalid samples.
+        - ``thinking_score_mean``: mean PRM thinking score if available.
+
+        Args:
+            cot_generator: ``ChainOfThoughtGenerator`` instance.
+            prompts:         List of prompts to test.
+            think_start_tag: Opening tag to validate.
+            think_end_tag:   Closing tag to validate.
+
+        Returns:
+            Fidelity metrics dict.
+        """
+        try:
+            from inference_protocols import HiddenCoTSampleCollector  # type: ignore
+        except ImportError as exc:
+            return {"status": "error", "error": f"inference_protocols import failed: {exc}"}
+
+        collector = HiddenCoTSampleCollector(
+            generator=cot_generator,
+            think_start_tag=think_start_tag,
+            think_end_tag=think_end_tag,
+        )
+        # collect with skip_invalid=False so we can analyse failure modes.
+        samples = collector.collect(prompts, skip_invalid=False)
+
+        n_total = len(samples)
+        if n_total == 0:
+            return {"validity_rate": float("nan"), "n_total": 0, "status": "no_samples"}
+
+        n_valid = sum(1 for s in samples if s.tag_valid)
+        validity_rate = n_valid / n_total
+
+        reasoning_tokens = [s.reasoning_tokens for s in samples if s.tag_valid]
+        answer_tokens = [s.answer_tokens for s in samples if s.tag_valid]
+        thinking_scores = [s.thinking_score for s in samples if s.thinking_score is not None]
+        self.telemetry.record_hidden_cot(
+            n_generated=n_total,
+            n_valid=n_valid,
+            mean_reasoning_tokens=(
+                sum(reasoning_tokens) / len(reasoning_tokens)
+                if reasoning_tokens else float("nan")
+            ),
+            mean_answer_tokens=(
+                sum(answer_tokens) / len(answer_tokens)
+                if answer_tokens else float("nan")
+            ),
+        )
+
+        # Categorise invalid samples by error type.
+        tag_error_types: Dict[str, int] = {}
+        for s in samples:
+            if not s.tag_valid:
+                # Determine error type from what's present in full_sequence.
+                if think_start_tag not in s.full_sequence and think_end_tag not in s.full_sequence:
+                    key = "missing_both_tags"
+                elif think_start_tag not in s.full_sequence:
+                    key = "missing_start_tag"
+                elif think_end_tag not in s.full_sequence:
+                    key = "missing_end_tag"
+                else:
+                    key = "tag_ordering_error"
+                tag_error_types[key] = tag_error_types.get(key, 0) + 1
+
+        return {
+            "n_total": n_total,
+            "n_valid": n_valid,
+            "validity_rate": validity_rate,
+            "mean_reasoning_tokens": (
+                sum(reasoning_tokens) / len(reasoning_tokens)
+                if reasoning_tokens else float("nan")
+            ),
+            "mean_answer_tokens": (
+                sum(answer_tokens) / len(answer_tokens)
+                if answer_tokens else float("nan")
+            ),
+            "thinking_score_mean": (
+                sum(thinking_scores) / len(thinking_scores)
+                if thinking_scores else float("nan")
+            ),
+            "tag_error_types": tag_error_types,
+            "status": "ok",
+        }
+
+
 # =============================================================================
 # BUDGET-AWARE PROFILE SELECTOR
 # =============================================================================

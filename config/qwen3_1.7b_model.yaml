@@ -1,0 +1,479 @@
+# Configuration for Qwen3 1.7B Model Training
+# Optimized for local training on HP Envy x360 (Ryzen 5 5625U, ~15GB RAM + 31GB swap)
+# YAML-driven orchestration surface for run_pipeline.py
+
+# ============================================================================
+# PIPELINE STAGE CONTROLS
+# ============================================================================
+# Controls which stages execute. Order is always: SFT → PRM → Policy Optimization
+# Set enabled: false to skip a stage (e.g. SFT already completed)
+pipeline:
+  sft:
+    enabled: false  # qwen3-pinion SFT is done — checkpoint at model.name
+  process_reward_model:
+    enabled: false  # PRM training skipped; load the standalone canonical PRM checkpoint.
+    load_from_checkpoint: "../checkpoints/process_reward_model_qwen3_1.7b"
+    step_detection: "newline"
+    process_reward_weight: 1.0
+  policy_optimization:
+    enabled: true
+    method: "tree_grpo"   # Active method: dpo | grpo | tree_grpo | simpo | kto | ppo
+
+# Optional artifact reuse from prior runs (RM/context/self-improvement states).
+# These components are loaded before Stage 2 policy reward wiring.
+artifact_reuse:
+  enabled: true
+  checkpoint_dir: "../checkpoints/dpo_qwen3_pinion_full_pipeline-FAIL"
+  load_reward_model: true
+  load_process_reward_model: false
+  load_context_compressor: true
+  load_validator: true
+  load_iterative_refiner: true
+  use_ref_cache: true
+  skip_prm_training_if_loaded: true
+
+# Two-session reload discipline (laptop memory management)
+# --session 1: train on first corpus split, save checkpoint, exit
+# --session 2: reload session-1 checkpoint, train on second split, save final
+# --session all (default): run both back-to-back with cleanup between
+sessions:
+  enabled: true
+  split_mode: "half"          # half | custom | single
+  checkpoint_between: true    # mandatory save between sessions
+  gc_between: true            # gc.collect() + torch cleanup between sessions
+
+# Post-training intelligent merge (Chiron consolidation lane)
+# Runs after composed sessions complete. Uses model_merging.py to intelligently
+# merge the RL-trained delta into the base rather than naive overwrite.
+merge:
+  enabled: false
+  method: "dare"                 # ties | dare | slerp | task_arithmetic | sign_consensus
+  density: 0.7                   # fraction of RL delta params to keep (TIES/DARE)
+  weights: [0.7]                 # merge weight(s) — how much RL delta to apply
+  seed: 42                       # deterministic masking
+  base_model_path: "../checkpoints/qwen3-pinion"   # qwen3-pinion is the live SFT-baked base in this repo
+  conflict_report: true          # emit per-layer conflict analytics
+  output_dir: "checkpoints/chiron_merged"                 # provenance-tracked output
+  # Per-layer density overrides (protect embedding/lm_head, allow more change in upper layers)
+  layer_density_map:
+    "embed_tokens.*": 1.0        # preserve all embedding changes
+    "lm_head.*": 1.0             # preserve all head changes
+    "layers\\.0\\..*": 0.9       # minimal pruning in early layers
+    "layers\\.2[0-9]\\..*": 0.6  # standard pruning in upper layers
+
+model:
+  name: "checkpoints/qwen3-pinion"  # Live merged SFT-baked base (no redownload)
+  # Alternative: "Qwen/Qwen2.5-1.5B-Instruct" for instruct base
+  trust_remote_code: true  # Required for Qwen models
+  torch_dtype: "float32"  # Use FP32 for CPU stability
+
+# Training Infrastructure - CPU Optimized
+training:
+  device: "cpu"  # CPU training for VPS
+  use_amp: false  # No AMP on CPU
+  
+  # Distributed - single process
+  distributed: false
+  world_size: 1
+  
+  # Memory optimization - CRITICAL for 8GB
+  gradient_checkpointing: true  # Trades compute for memory
+  gradient_accumulation_steps: 16  # Larger effective batch with tiny micro-batch
+  
+  # Optimization
+  optimizer: "adamw"
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_epsilon: 1.0e-8
+  weight_decay: 0.01
+  max_grad_norm: 1.0
+  
+  # Learning rate schedule
+  lr_scheduler: "cosine"
+  warmup_ratio: 0.1
+  warmup_steps: null
+  output_dir: "../checkpoints/chiron_tree_grpo_smoke"
+
+# LoRA Configuration - ESSENTIAL for memory efficiency
+lora:
+  use_lora: true
+  r: 8  # Small rank for 1.7B (still effective)
+  alpha: 16
+  dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+    - "gate_proj"
+    - "up_proj"
+    - "down_proj"
+  bias: "none"
+  task_type: "CAUSAL_LM"
+  
+  # QLoRA - 4-bit for even smaller memory
+  use_qlora: true
+  quantization: "nf4"
+  double_quant: true
+  quant_type: "nf4"
+  compute_dtype: "float32"  # FP32 for CPU
+
+# SFT Configuration - Conservative for CPU
+sft:
+  learning_rate: 2.0e-5  # Slightly higher for small model
+  batch_size: 1  # Per device - minimal for memory
+  num_epochs: 3
+  max_seq_length: 512  # Shorter context saves memory
+  packing: false
+  
+  # Data
+  train_file: "data/sft_train.json"
+  eval_file: "data/sft_eval.json"
+  
+  # Logging - less frequent for CPU
+  logging_steps: 5
+  eval_steps: 50
+  save_steps: 100
+  
+  # Output
+  output_dir: "checkpoints/sft_qwen3_1.7b"
+  save_total_limit: 2
+
+# Process Reward Model Configuration
+process_reward_model:
+  learning_rate: 1.0e-5
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  dropout: 0.1
+  hidden_size: 2048  # Qwen3-1.7B hidden size
+  
+  label_smoothing: 0.05
+  l2_reg: 1.0e-4
+  margin: 0.0
+  
+  ensemble_size: 1  # Single model for memory
+  
+  train_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+  eval_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+  
+  output_dir: "checkpoints/process_reward_model_qwen3_1.7b"
+
+# DPO Configuration - Recommended for CPU (no online generation)
+dpo:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 0.1
+  label_smoothing: 0.0
+  loss_type: "sigmoid"
+  
+  reference_model_path: "checkpoints/sft_qwen3_1.7b"
+  reference_free: false
+  
+  train_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+  eval_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+  
+  output_dir: "checkpoints/dpo_qwen3_1.7b"
+
+# GRPO Configuration (Alternative to DPO)
+grpo:
+  learning_rate: 5.0e-7
+  batch_size: 2
+  num_epochs: 2
+  max_seq_length: 512
+  
+  group_size: 4  # Small group for memory
+  kl_coeff: 0.1
+  clip_ratio: 0.2
+  num_policy_updates: 1
+  max_completion_length: 128  # Short completions for speed
+  temperature: 1.0
+  
+  use_verifiable_rewards: true
+  reward_fn_path: null
+  
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  output_dir: "checkpoints/grpo_qwen3_1.7b"
+
+# Tree-GRPO Configuration (search-aware GRPO over grouped rollouts)
+tree_grpo:
+  learning_rate: 5.0e-7
+  batch_size: 2
+  num_epochs: 2
+  max_seq_length: 512
+
+  group_size: 4
+  kl_coeff: 0.1
+  clip_ratio: 0.2
+  num_policy_updates: 1
+  max_completion_length: 128
+  temperature: 1.0
+  use_verifiable_rewards: true
+
+  depth_discount: 0.95
+  visit_count_weighting: true
+  branch_comparison_mode: "sibling"
+  use_prm_preference: false
+  prm_min_aggregation: true
+  rollout_source: "mcts"   # mcts | astar | mixed
+  min_group_size: 2
+  replay_buffer_size: 2048
+  replay_priority: "frontier"
+  cot_mode: true
+  reward_on_answer_only: true
+
+  # run_pipeline resolves train/eval paths before Moonshine handoff, so keep these to real files.
+  train_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+  eval_file: "dpo-datasets-moonshine/20260314_014300_full_provider_dpo_final_trainerview/trainer_views/full_provider.processed.trainer.noemoji.jsonl"
+
+  output_dir: "checkpoints/tree_grpo_qwen3_1.7b"
+  data_source: "moonshine"
+  moonshine:
+    input_path: "../distill-the-flow/moonshine/moonshine_corpus.db"
+    input_kind: "auto"
+    limit: 16
+    strip_meta: true
+    strip_emoji: true
+
+# SimPO Configuration - BEST for CPU (no reference model needed!)
+simpo:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 2.0
+  gamma: 0.5
+  label_smoothing: 0.0
+  
+  train_file: "data/preference_train.json"
+  eval_file: "data/preference_eval.json"
+  
+  output_dir: "checkpoints/simpo_qwen3_1.7b"
+
+# KTO Configuration
+kto:
+  learning_rate: 1.0e-6
+  batch_size: 1
+  num_epochs: 2
+  max_seq_length: 512
+  
+  beta: 0.1
+  lambda_d: 1.0
+  lambda_u: 0.5
+  kl_ema_decay: 0.99
+  
+  train_file: "data/unpaired_train.json"
+  eval_file: "data/unpaired_eval.json"
+  
+  output_dir: "checkpoints/kto_qwen3_1.7b"
+
+# PPO Configuration (Not recommended for CPU - very slow)
+ppo:
+  learning_rate: 5.0e-7
+  batch_size: 8
+  num_epochs: 2
+  max_seq_length: 512
+  
+  clip_ratio: 0.2
+  kl_coeff: 0.02
+  kl_target: null
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  
+  lam: 0.95
+  gamma: 0.99
+  normalize_advantage: true
+  whiten_rewards: false
+  
+  ppo_epochs: 2
+  mini_batch_size: 4
+  rollout_multiplier: 2
+  
+  temperature: 1.0
+  max_completion_length: 128
+  
+  process_reward_model_path: "checkpoints/process_reward_model_qwen3_1.7b"
+  value_model_path: null
+  
+  train_file: "data/prompts_train.json"
+  eval_file: "data/prompts_eval.json"
+  
+  output_dir: "checkpoints/ppo_qwen3_1.7b"
+
+# Logging Configuration
+logging:
+  use_wandb: false  # Disable for VPS (optional)
+  wandb_project: "rlhf-qwen3-1.7b"
+  wandb_run_name: null
+  wandb_tags: ["1.7b", "rlhf", "cpu", "qwen3"]
+  
+  use_tensorboard: true
+  tensorboard_dir: "logs/tensorboard_qwen3_1.7b"
+  
+  log_level: "INFO"
+  log_file: "logs/training_qwen3_1.7b.log"
+
+# Checkpointing
+checkpoint:
+  save_total_limit: 2
+  resume_from_checkpoint: null
+  save_safetensors: true
+
+# Evaluation
+evaluation:
+  eval_strategy: "steps"
+  eval_steps: 50
+  eval_accumulation_steps: 1
+  
+  compute_kl: true
+  compute_rewards: true
+  compute_diversity: false  # Skip diversity for speed
+  
+  eval_max_new_tokens: 128
+  eval_temperature: 1.0
+  eval_num_return_sequences: 1
+
+# Context Compression - ALWAYS ON per operator directive
+context_compression:
+  enabled: true
+  method: "attention"
+  compression_ratio: 16
+  num_heads: 8
+  dropout: 0.1
+  chunk_size: 256
+
+# Self-Play / Self-Improvement - ALWAYS ON per operator directive
+# Routes through IterativeRefiner + AdversarialValidator + CapabilityTester
+self_play:
+  enabled: true
+  n_games: 100
+  refinement_iterations: 3
+  quality_threshold: 0.85
+  adversarial_validation: true
+  capability_test_frequency: 10
+
+# Validation
+validation:
+  run_capability_tests: true
+  rollback_on_regression: true
+  regression_threshold: 0.15
+
+# Hardware — HP Envy x360 (Ryzen 5 5625U, ~15GB RAM, ~31GB swap)
+hardware:
+  # Memory management
+  max_memory: "12GiB"  # Leave ~3GB for system
+  offload_optimizer: true
+  offload_params: true
+
+  # CPU optimizations
+  num_workers: 4   # DataLoader workers (12 logical CPUs available)
+  pin_memory: false  # No GPU
+
+  # Threading
+  torch_num_threads: 6  # Half of 12 logical CPUs
+
+# Test-Time Compute / Capability Formation
+inference_optimizations:
+  enabled: true
+
+  # Primary search strategy when PRM available: "mcts" | "astar"
+  # Falls back to "best_of_n" automatically when no PRM
+  search_strategy: "mcts"
+
+  # compile_model — torch.compile wrapper (disabled on CPU, no benefit)
+  compile_model:
+    enabled: false
+    mode: "reduce-overhead"   # reduce-overhead | default | max-autotune
+    apply_to_prm: false
+
+  # OptimizedAttention — Flash Attn 2 / SDPA kernel replacement
+  # WARNING: resets attention weights — only enable for GPU + fresh models
+  optimized_attention:
+    enabled: false
+
+  # PagedKVCache — prefix reuse for MCTS/A* tree search
+  kv_cache:
+    enabled: true
+    page_size: 16
+    max_pages: 128        # Memory-bounded for laptop CPU
+    max_prefix_entries: 32
+
+  # SpeculativeDecoder — Chen et al. 2023 draft-then-verify speed-up
+  speculative_decoding:
+    enabled: false
+    draft_model_path: "Qwen/Qwen3-0.6B"    # Prior small-draft lane; live tree_grpo path does not consume this yet
+    gamma: 4                  # Draft tokens per step
+    temperature: 1.0
+    adapt_gamma: true
+    gamma_min: 2
+    gamma_max: 8
+    adapt_window: 50
+
+  # BestOfN — N-candidate generation + multi-objective reranking
+  best_of_n:
+    n_samples: 4
+    temperature: 1.0
+    top_p: 0.95
+    reward_aggregation: "mean"
+    use_diversity_bonus: true
+    diversity_weight: 0.1
+    step_rerank: true         # Enable PRM-Min step-level reranking
+    prm_process_weight: 1.0
+
+  # MCTS — full 4-phase MCTS with PUCT + progressive widening
+  mcts:
+    n_simulations: 4
+    max_rollout_depth: 32
+
+  # AStarDecoder — best-first A* via LexicalMDP + PRM g-score + value h-score
+  astar:
+    enabled: true
+    max_nodes: 50
+    max_depth: 32
+    n_actions: 4
+    heuristic_weight: 1.0
+    temperature: 0.8
+    use_value_heuristic: true
+
+  # ChainOfThought — two-phase hidden deliberation (R1/o1 style)
+  chain_of_thought:
+    enabled: true
+    max_thinking_tokens: 128
+    max_answer_tokens: 256
+    temperature: 0.8
+    strip_thinking: true      # Remove <think>...</think> from servable output
+
+  # VerifiableRewards — static reward callables for GRPO/PPO
+  verifiable_rewards:
+    enabled: false
+    math_enabled: false       # VerifiableRewardFactory.math_verifier
+    code_enabled: false       # VerifiableRewardFactory.code_verifier
+    format_enabled: false     # VerifiableRewardFactory.format_verifier
+    format_required_tags: []
+    format_forbidden_patterns: []
+    format_min_steps: 0
+
+  # TreeRolloutCollector — MCTS/A* search → GRPO training data bridge
+  rollout_collector:
+    enabled: true
+    min_reward_threshold: 0.0
+    n_samples_per_prompt: 4
+    max_length: 256
+
+benchmark_harness:
+  enabled: true
+  max_prompts: 8
+  max_new_tokens: 128
+  search_quality:
+    enabled: true
+  hidden_cot_fidelity:
+    enabled: true
+  tree_grpo:
+    enabled: true

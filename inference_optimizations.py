@@ -27,6 +27,7 @@ import json
 import ast
 from collections import defaultdict
 import heapq
+import hashlib
 import inspect
 
 try:
@@ -239,16 +240,21 @@ class PagedKVCache:
         # Prefix KV cache is separate from paged blocks. Entries contain the
         # reusable cache state plus the last logits so generation can resume
         # without replaying the prefix tokens.
-        self._prefix_cache: Dict[int, Dict[str, Any]] = {}
+        self._prefix_cache: Dict[str, Dict[str, Any]] = {}
         self._max_prefix_entries = max_prefix_entries
         # Telemetry
         self._hit_count = 0
         self._eviction_count = 0
 
     @staticmethod
-    def _prefix_cache_key(prefix_text: str) -> Tuple[int, int]:
-        """Primary cache key; stored prefix text is used to verify collisions."""
-        return (hash(prefix_text), len(prefix_text))
+    def _prefix_cache_key(prefix_text: str) -> str:
+        """Deterministic stable key: SHA-256 hex digest of UTF-8 prefix text.
+
+        256-bit entropy eliminates practical collision risk.  The existing
+        ``prefix_text == cached["prefix_text"]`` check in get_or_compute_prefix()
+        is retained as cheap defense-in-depth.
+        """
+        return hashlib.sha256(prefix_text.encode()).hexdigest()
 
     def _validate_layer_idx(self, layer_idx: int) -> None:
         if layer_idx < 0 or layer_idx >= self.num_layers:
@@ -1981,13 +1987,17 @@ class ChainOfThoughtGenerator:
             elif hasattr(prm, "score_text"):
                 thinking_score = float(prm.score_text(thinking_text))
 
-        return {
+        result = {
             "answer": answer_text,
             "thinking": thinking_text,
             "full_sequence": full_sequence,
             "servable_sequence": servable_sequence,
             "thinking_score": thinking_score,
         }
+        # Cache for callers (e.g. HiddenCoTSampleCollector) that need thinking_score
+        # without re-running generation.
+        self._last_result = result
+        return result
 
     def _generate_phase(
         self,
@@ -2038,6 +2048,19 @@ class AStarConfig:
     heuristic_weight: float = 1.0
     temperature: float = 0.8
     use_value_heuristic: bool = True
+
+
+def _path_to_id(path: List[str]) -> str:
+    """Stable deterministic ID for an A* action path.
+
+    ``sha256(json.dumps(path, ensure_ascii=False))[:16]``.
+    Used both as node identity in AStarDecoder trace records and as the
+    Tree-GRPO ``group_id`` in AStarRolloutCollector.collect_grouped().
+    Deterministic across processes; collision probability negligible at 64 bits.
+    """
+    return hashlib.sha256(
+        json.dumps(path, ensure_ascii=False).encode()
+    ).hexdigest()[:16]
 
 
 @dataclass(eq=False)
@@ -2099,9 +2122,20 @@ class AStarDecoder:
         self,
         prompt: str,
         reward_fn: Optional[Callable[[str], float]] = None,
+        trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Run A* search from prompt.
+
+        Args:
+            prompt: Root prompt for the search.
+            reward_fn: Optional terminal reward; added as bonus to g-score.
+            trace: When True, include a ``"trace"`` key in the result containing
+                a list of per-expansion records with full parent/child identity,
+                action paths, and scores.  Every node popped from the frontier
+                (after stale-skip) gets one record.  Terminal nodes are flagged
+                with ``is_terminal=True`` and their ``terminal_reward`` is
+                populated.  Non-trace callers are unaffected — zero overhead.
 
         Returns:
             {
@@ -2109,11 +2143,25 @@ class AStarDecoder:
                 'g_score': float,
                 'depth': int,
                 'nodes_expanded': int,
-                'path': List[str],   # action sequence
+                'path': List[str],       # action sequence root → result
+                'trace': List[Dict],     # only present when trace=True
             }
+
+            Each trace record:
+                id            — _path_to_id(path): 16-char sha256 hex
+                parent_id     — _path_to_id(path[:-1]), or None for root
+                state         — node.state string
+                action        — action taken from parent to reach this node
+                depth         — node depth
+                g_score       — cumulative PRM score at this node
+                h_score       — heuristic value at this node
+                path          — full action path from root to this node
+                is_terminal   — True if node was handled as terminal
+                terminal_reward — reward_fn output (0.0 if not terminal or no fn)
         """
         cfg = self.config
         mdp = self.mdp
+        _trace_records: List[Dict[str, Any]] = []
 
         start_state = mdp.initial_state(prompt)
         h0 = self._heuristic(start_state)
@@ -2141,11 +2189,29 @@ class AStarDecoder:
                 continue
             nodes_expanded += 1
 
+            if trace:
+                _node_path = self._extract_path(node)
+                _trace_records.append({
+                    "id": _path_to_id(_node_path),
+                    "parent_id": _path_to_id(_node_path[:-1]) if node.parent is not None else None,
+                    "state": node.state,
+                    "action": node.action,
+                    "depth": node.depth,
+                    "g_score": node.g_score,
+                    "h_score": node.h_score,
+                    "path": _node_path,
+                    "is_terminal": False,
+                    "terminal_reward": 0.0,
+                })
+
             if mdp.is_terminal(node.state) or node.depth >= cfg.max_depth:
                 terminal_bonus = float(reward_fn(node.state)) if reward_fn is not None else 0.0
                 effective_g = node.g_score + terminal_bonus
                 if best_terminal is None or effective_g > best_terminal[1]:
                     best_terminal = (node, effective_g)
+                if trace and _trace_records:
+                    _trace_records[-1]["is_terminal"] = True
+                    _trace_records[-1]["terminal_reward"] = terminal_bonus
                 continue
 
             if best_nonterminal is None or node.g_score > best_nonterminal.g_score:
@@ -2179,13 +2245,16 @@ class AStarDecoder:
             result_node = best_nonterminal if best_nonterminal is not None else root
             result_g = result_node.g_score
 
-        return {
+        _result: Dict[str, Any] = {
             "text": result_node.state,
             "g_score": result_g,
             "depth": result_node.depth,
             "nodes_expanded": nodes_expanded,
             "path": self._extract_path(result_node),
         }
+        if trace:
+            _result["trace"] = _trace_records
+        return _result
 
     def _heuristic(self, state: str) -> float:
         """Compute A* heuristic via value model. Returns 0.0 when disabled."""
@@ -2310,7 +2379,18 @@ class AStarDecoder:
 
 @dataclass
 class RolloutSample:
-    """A single training-ready sample collected from an MCTS rollout."""
+    """A single training-ready sample collected from an MCTS or A* rollout.
+
+    Fields added for Tree-GRPO sibling grouping:
+    - group_id: sha256(json.dumps(parent_action_path))[:16]. All siblings of the
+      same MCTS parent node share the same parent_path (path[:-1]), so this is
+      guaranteed identical for sibling nodes and deterministic across processes.
+      Never derived from Python hash() (process-randomized) or truncated action
+      strings (collision-prone).
+    - parent_depth: depth of the parent node that spawned this completion.
+    - sibling_rewards: all sibling rewards at the same parent node, populated
+      after the full sibling group is assembled in collect_grouped().
+    """
     prompt: str
     completion: str
     reward: float
@@ -2319,6 +2399,9 @@ class RolloutSample:
     full_state: str
     path: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    group_id: Optional[str] = None
+    parent_depth: int = 0
+    sibling_rewards: List[float] = field(default_factory=list)
 
 
 class AStarGenerator:
@@ -2371,6 +2454,7 @@ class AStarGenerator:
         self,
         prompt: str,
         reward_fn: Optional[Callable[[str], float]] = None,
+        trace: bool = False,
     ) -> Dict[str, Any]:
         """
         Run A* search from prompt.
@@ -2381,13 +2465,17 @@ class AStarGenerator:
             depth          — depth of result node
             nodes_expanded — nodes expanded during search
             path           — action sequence from root to result
+            trace          — per-expansion records (only when trace=True)
 
         Args:
             prompt: Input prompt to search from.
             reward_fn: Optional terminal reward function; passed to AStarDecoder.decode().
+            trace: When True, pass through to AStarDecoder.decode(trace=True) and include
+                the ``"trace"`` key in the result.  Existing callers that omit trace are
+                unaffected.
 
         Returns:
-            Dict with keys: text, g_score, depth, nodes_expanded, path.
+            Dict with keys: text, g_score, depth, nodes_expanded, path[, trace].
         """
         mdp = LexicalMDP(
             policy_model=self.policy,
@@ -2401,7 +2489,7 @@ class AStarGenerator:
             value_model=self.value_model,
             kv_cache=self.kv_cache,
         )
-        return decoder.decode(prompt, reward_fn=reward_fn)
+        return decoder.decode(prompt, reward_fn=reward_fn, trace=trace)
 
 
 class TreeRolloutCollector:
@@ -2482,6 +2570,249 @@ class TreeRolloutCollector:
             current = current.parent
         path.reverse()
         return path
+
+    def collect_grouped(
+        self,
+        prompts: List[str],
+        n_samples_per_prompt: int = 8,
+        max_length: int = 512,
+    ) -> Dict[str, List[RolloutSample]]:
+        """Collect MCTS rollouts grouped by parent node, preserving sibling relationships.
+
+        Returns ``Dict[group_id -> List[RolloutSample]]`` where every sample in a
+        group shares the same MCTS parent and can be compared for intra-tree
+        (sibling-branch) relative advantage estimation in TreeGRPOTrainer.
+
+        group_id is ``hashlib.sha256(json.dumps(parent_path).encode()).hexdigest()[:16]``
+        where ``parent_path = _extract_path(parent_node)``.  This is deterministic
+        and cross-process stable — siblings always produce the same hash because
+        their parent path is identical by construction.
+
+        Sibling rewards are back-filled onto every sample in the group after all
+        children of a parent are collected, enabling offline advantage statistics.
+        Groups whose reward score is entirely below min_reward_threshold are
+        discarded, but filtering is applied per-group rather than per-sample so
+        that advantage normalisation remains within the sibling set.
+        """
+        import hashlib
+        import json as _json
+
+        grouped: Dict[str, List[RolloutSample]] = {}
+
+        for prompt in prompts:
+            result = self.mcts.generate(prompt, max_length, self.reward_fn)
+            root = result.get("root")
+            if root is None:
+                continue
+
+            # BFS over the tree; for every parent node that has children, treat
+            # all children as one sibling group.
+            queue: List[MCTSNode] = [root]
+            while queue:
+                parent = queue.pop(0)
+                if not parent.children:
+                    continue
+
+                parent_path = self._extract_path(parent)
+                group_id = hashlib.sha256(
+                    _json.dumps(parent_path).encode()
+                ).hexdigest()[:16]
+
+                group_samples: List[RolloutSample] = []
+                for child in parent.children:
+                    full_state = child.state
+                    completion = full_state[len(prompt):]
+                    reward = (
+                        child.reward
+                        if child.reward is not None
+                        else float(self.reward_fn(full_state))
+                    )
+                    sample = RolloutSample(
+                        prompt=prompt,
+                        completion=completion,
+                        reward=reward,
+                        depth=child.depth,
+                        visit_count=child.visits,
+                        full_state=full_state,
+                        path=self._extract_path(child),
+                        metadata={"node_reward_present": child.reward is not None},
+                        group_id=group_id,
+                        parent_depth=parent.depth,
+                        sibling_rewards=[],  # back-filled below
+                    )
+                    group_samples.append(sample)
+                    queue.append(child)
+
+                if not group_samples:
+                    continue
+
+                # Back-fill sibling_rewards on every sample in the group.
+                all_rewards = [s.reward for s in group_samples]
+                for s in group_samples:
+                    s.sibling_rewards = all_rewards
+
+                grouped[group_id] = grouped.get(group_id, []) + group_samples
+
+        # Filter groups whose max reward is below threshold.
+        if self.min_reward_threshold > 0.0:
+            grouped = {
+                gid: samps
+                for gid, samps in grouped.items()
+                if max(s.reward for s in samps) >= self.min_reward_threshold
+            }
+
+        return grouped
+
+
+class AStarRolloutCollector:
+    """Adapt AStarGenerator search outputs to the RolloutSample format.
+
+    Provides two collection modes:
+
+    ``collect()`` — flat sampling.  Runs ``AStarGenerator.generate()``
+    ``n_samples_per_prompt`` times per prompt independently; temperature > 0 in
+    ``AStarConfig`` provides diversity.  Returns ``RolloutSample`` objects with
+    prompt-level ``group_id`` (sha256(prompt)[:16]).  Suitable for flat
+    ``GRPOTrainer`` usage.
+
+    ``collect_grouped()`` — sibling-group sampling for Tree-GRPO.  Runs
+    ``AStarGenerator.generate()`` once per prompt with ``trace=True``, harvesting
+    all terminal nodes from the single search tree.  Nodes sharing a parent form a
+    natural sibling group.  ``group_id`` is ``_path_to_id(parent_action_path)`` —
+    deterministic, collision-resistant, and consistent with ``TreeRolloutCollector``
+    (MCTS).  Suitable for ``TreeGRPOTrainer``'s intra-tree advantage estimation.
+    """
+
+    def __init__(
+        self,
+        astar_generator: "AStarGenerator",
+        reward_fn: Callable[[str], float],
+        min_reward_threshold: float = 0.0,
+    ) -> None:
+        self.astar = astar_generator
+        self.reward_fn = reward_fn
+        self.min_reward_threshold = min_reward_threshold
+
+    def collect(
+        self,
+        prompts: List[str],
+        n_samples_per_prompt: int = 8,
+        max_length: int = 512,
+    ) -> List[RolloutSample]:
+        """Run A* search ``n_samples_per_prompt`` times per prompt.
+
+        Each call to ``AStarGenerator.generate()`` is independent; temperature
+        > 0 in ``AStarConfig`` provides sample diversity.  Returns a flat
+        ``List[RolloutSample]`` with prompt-level ``group_id``.
+        """
+        import hashlib
+
+        samples: List[RolloutSample] = []
+        for prompt in prompts:
+            prompt_gid = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+            for _ in range(n_samples_per_prompt):
+                try:
+                    result = self.astar.generate(prompt, reward_fn=self.reward_fn)
+                except Exception:
+                    continue
+                text = result.get("text", "")
+                completion = text[len(prompt):]
+                reward = float(self.reward_fn(text))
+                if reward < self.min_reward_threshold:
+                    continue
+                samples.append(RolloutSample(
+                    prompt=prompt,
+                    completion=completion,
+                    reward=reward,
+                    depth=result.get("depth", 0),
+                    visit_count=result.get("nodes_expanded", 1),
+                    full_state=text,
+                    path=result.get("path", []),
+                    metadata={"g_score": result.get("g_score", 0.0)},
+                    group_id=prompt_gid,
+                    parent_depth=0,
+                    sibling_rewards=[],
+                ))
+        return samples
+
+    def collect_grouped(
+        self,
+        prompts: List[str],
+        max_length: int = 512,
+    ) -> List[RolloutSample]:
+        """Run A* once per prompt with trace=True and group terminal nodes by parent.
+
+        Each terminal node found during the search becomes a ``RolloutSample``.
+        Nodes that share the same parent form a natural sibling group — the
+        fundamental unit of Tree-GRPO intra-tree advantage estimation.
+
+        ``group_id = _path_to_id(parent_action_path)`` —
+        ``sha256(json.dumps(parent_path, ensure_ascii=False))[:16]``.
+        Deterministic, collision-resistant, and consistent with
+        ``TreeRolloutCollector.collect_grouped()`` (MCTS sibling path).
+
+        Prompts that produce no terminal nodes in the A* trace yield no samples;
+        use ``collect()`` for flat sampling when sibling structure is not required.
+
+        Args:
+            prompts: List of prompt strings to search over.
+            max_length: Unused at this layer (controlled by AStarConfig.max_depth);
+                kept for interface parity with collect().
+
+        Returns:
+            Flat List[RolloutSample] with group_id, parent_depth, and
+            sibling_rewards populated on every sample.
+        """
+        samples: List[RolloutSample] = []
+        for prompt in prompts:
+            try:
+                result = self.astar.generate(prompt, reward_fn=self.reward_fn, trace=True)
+            except Exception:
+                continue
+
+            trace_records: List[Dict[str, Any]] = result.get("trace", [])
+            terminals = [r for r in trace_records if r.get("is_terminal")]
+            if not terminals:
+                continue
+
+            # Group terminal nodes by parent_id — each group is a sibling set.
+            by_parent: Dict[Optional[str], List[Dict[str, Any]]] = defaultdict(list)
+            for rec in terminals:
+                by_parent[rec["parent_id"]].append(rec)
+
+            nodes_expanded = result.get("nodes_expanded", 0)
+
+            for parent_id, siblings in by_parent.items():
+                rewards = [rec.get("terminal_reward", 0.0) for rec in siblings]
+                # group_id == parent_id: already _path_to_id(parent_path).
+                # Fall back to _path_to_id([]) only for root (parent_id is None).
+                group_id = parent_id if parent_id is not None else _path_to_id([])
+                # All siblings are at the same depth; parent is one level above.
+                parent_depth = max(0, siblings[0]["depth"] - 1)
+
+                for rec, reward in zip(siblings, rewards):
+                    if reward < self.min_reward_threshold:
+                        continue
+                    text = rec["state"]
+                    completion = text[len(prompt):]
+                    samples.append(RolloutSample(
+                        prompt=prompt,
+                        completion=completion,
+                        reward=reward,
+                        depth=rec["depth"],
+                        visit_count=1,
+                        full_state=text,
+                        path=rec["path"],
+                        metadata={
+                            "g_score": rec["g_score"],
+                            "h_score": rec["h_score"],
+                            "nodes_expanded": nodes_expanded,
+                        },
+                        group_id=group_id,
+                        parent_depth=parent_depth,
+                        sibling_rewards=rewards,
+                    ))
+        return samples
 
 
 # =============================================================================

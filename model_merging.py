@@ -69,7 +69,7 @@ class MergeConfig:
 
 class ModelMerger:
     """
-    Merge multiple fine-tuned models into one.
+    Merge multiple models into one.
 
     All merge methods:
       - compute deltas in float32 (prevents silent skipping of bfloat16/float16 params)
